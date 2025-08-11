@@ -27,7 +27,7 @@ def find_ecg_events_neurokit(
         min_segment_time: int | float | None = None,
         method: str = "neurokit", 
         clean: bool = True, 
-        reject_by_annotation: list[str] | str | None = ["edge", "bad"], 
+        reject_by_annotation: list[str] | str | None = ["edge", "bad", "ecg_excellent"], 
         annotate_valid_ecg_period: str | None = "ecg_valid",
         verbose = True
 ):
@@ -50,6 +50,10 @@ def find_ecg_events_neurokit(
         segments_to_keep = (ends - onsets)/sfreq >= min_segment_time
         onsets, ends = onsets[segments_to_keep], ends[segments_to_keep]
     peaks = [[]]*len(onsets) #Allows for future parallelization if necessary
+    if not len(onsets):
+        #Then have found no appropriate segments
+        Warning("No segments were appropriate for ECG Peak Extraction")
+        return None, None, None
     for i, (onset, end) in enumerate(zip(onsets, ends)):
         ecg_segment = raw[idx_ecg, onset:end]
         if clean is not None:
@@ -63,10 +67,11 @@ def find_ecg_events_neurokit(
         peaks[i] = ecg_segment_peaks
     #First eliminate the empty windows - CHECK BACK LATER
     peaks = [peak for peak in peaks if len(peak)]
-    #Keep the average HR to return it later
-    average_hr = _average_HR_from_windows(peaks, sfreq)
     peaks_combined = np.concatenate(peaks)
     n_peaks = len(peaks_combined)
+    if not n_peaks:
+        Warning("No peaks were found")
+        return None, None, None
     #Now Annotate the valid ecg periods
     if annotate_valid_ecg_period is not None:
         ecg_annotations = mne.Annotations(
@@ -76,7 +81,7 @@ def find_ecg_events_neurokit(
         )
         #Now add to existing annotations
         raw.set_annotations(raw.annotations + ecg_annotations)
-    
+    average_hr = _average_HR_from_windows(peaks, sfreq)
     return (
         np.stack([
             peaks_combined, 
@@ -87,8 +92,17 @@ def find_ecg_events_neurokit(
         average_hr
         )
 
-def ecg_quality_zhao2018_neurokit(raw, ch_name):
-    pass
+def ecg_quality_zhao2018_neurokit(
+        raw, 
+        ch_name: str | None = None, 
+        tstart: int | float | None = 0.0, 
+        tend: int | float | None = None, 
+        valid_ecg_annotation: str | list[str] | None = "ecg_valid", 
+        annotation_name: str | None = "ecg_excellent", 
+        keep_barely_acceptable: bool = False,
+        verbose: bool = True
+):
+    sfreq = raw.info["sfreq"]
 
 @verbose
 def ecg_quality_sliding_window_zhao2018_neurokit(
@@ -148,8 +162,8 @@ def ecg_quality_sliding_window_zhao2018_neurokit(
             ends_quality.append(curr_window_acceptable_end)
     #now annotate the raw object
     #First convert back to np.ndarray
-    onsets_quality = np.array(onsets_quality)
-    ends_quality = np.array(ends_quality)
+    onsets_quality = np.array(onsets_quality, dtype = int)
+    ends_quality = np.array(ends_quality, dtype = int)
     ecg_annotations = mne.Annotations(
         onset = onsets_quality/sfreq,
         duration = (ends_quality - onsets_quality)/sfreq,
@@ -236,7 +250,7 @@ def _annotations_starts_stops_time_restriction(
     logger.info(f"Now choosing annotations from [{tmin} to {"end" if tmax is None else tmax}] sec")
     Nstart = 0 if tmin is None else raw.time_as_index(tmin)
     Nend = raw.n_times if tmax is None else raw.time_as_index(tmax)
-    annotations_time_restriction_mask =  (Nstart <= ends) & (onsets <= Nend)
+    annotations_time_restriction_mask =  (Nstart < ends) & (onsets < Nend) #Probably better with <=, >= but then would need to deal with Nstart == Nend
     onsets, ends = onsets[annotations_time_restriction_mask], ends[annotations_time_restriction_mask]
     logger.info(f"Rejected {np.sum(~annotations_time_restriction_mask)} annotations for being completely out of the range")
     del annotations_time_restriction_mask
@@ -327,4 +341,5 @@ if __name__ == "__main__":
     print(raw.annotations)
     ecg_clean_neurokit(raw)
     events, ecg_idx, average_hr = find_ecg_events_neurokit(raw)
-    print(ecg_quality_sliding_window_zhao2018_neurokit(raw, keep_barely_acceptable=True))
+    print(ecg_quality_sliding_window_zhao2018_neurokit(raw, keep_barely_acceptable=True, tstart=0, tend = 0))
+    print(average_hr)
