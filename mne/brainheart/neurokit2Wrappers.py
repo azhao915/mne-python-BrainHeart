@@ -7,6 +7,8 @@ import mne
 from mne.utils import logger, verbose
 from mne.annotations import _annotations_starts_stops
 
+from mne.brainheart.utils import _annotations_starts_stops_time_restriction
+
 def modify_parameters_wrapper(new_params): 
     """_summary_
 
@@ -20,16 +22,16 @@ def modify_parameters_wrapper(new_params):
 @verbose
 def find_ecg_events_neurokit(
         raw: mne.io.BaseRaw, 
-        event_id: int = 0, 
+        event_id: int = 1, 
         ch_name: str = None, 
         tstart: float | int = 0.0, 
         tend: float | int = None,
         min_segment_time: int | float | None = None,
         method: str = "neurokit", 
         clean: bool = True, 
-        reject_by_annotation: list[str] | str | None = ["edge", "bad", "ecg_excellent"], 
+        reject_by_annotation: list[str] | str | None = ["edge", "bad"], 
         annotate_valid_ecg_period: str | None = "ecg_valid",
-        verbose = True
+        verbose: bool = True
 ):
     """ Calls ecg_peaks from Neurokit2
     
@@ -113,7 +115,7 @@ def ecg_quality_sliding_window_zhao2018_neurokit(
         tstart: int | float | None = 0.0,
         tend: int | float | None = None,
         valid_ecg_annotation: str | list[str] | None = "ecg_valid",
-        annotation_name: str | None = "ecg_excellent", 
+        annotation_name: str | None = "ecg_acceptable", 
         keep_barely_acceptable: bool = False,
         verbose = True,
         **kwargs
@@ -230,45 +232,14 @@ def ecg_fixpeaks_neurokit(
     #print(artifacts["drrs"])
 
 
-@verbose
-def _annotations_starts_stops_time_restriction(
-        raw, #Probably better to include this function in annotations.py 
-        kinds, 
-        name, 
-        invert = False,
-        tmin = 0.0,
-        tmax = None,
-        crop_annotations: bool = False, 
-        verbose: bool = True): 
-    onsets, ends = _annotations_starts_stops(
-        raw, 
-        kinds, 
-        name, 
-        invert 
-    )
-    logger.info(f"Found Onsets: {onsets}, Ends: {ends}")
-    logger.info(f"Now choosing annotations from [{tmin} to {"end" if tmax is None else tmax}] sec")
-    Nstart = 0 if tmin is None else raw.time_as_index(tmin)
-    Nend = raw.n_times if tmax is None else raw.time_as_index(tmax)
-    annotations_time_restriction_mask =  (Nstart < ends) & (onsets < Nend) #Probably better with <=, >= but then would need to deal with Nstart == Nend
-    onsets, ends = onsets[annotations_time_restriction_mask], ends[annotations_time_restriction_mask]
-    logger.info(f"Rejected {np.sum(~annotations_time_restriction_mask)} annotations for being completely out of the range")
-    del annotations_time_restriction_mask
-    tstart_in_annotations = (onsets < Nstart)
-    tend_in_annotations = (Nend < ends)
-    strict_mask = tstart_in_annotations | tend_in_annotations 
-    if crop_annotations:
-        onsets[tstart_in_annotations] = Nstart
-        ends[tend_in_annotations] = Nend
-        logger.info(f"Cropped {np.sum(strict_mask)} annotations")
-    else:
-        #Then delete the segments where tstart or tend appear in the annotation
-        onsets = onsets[~strict_mask]
-        ends = ends[~strict_mask]
-        logger.info(f"Further Removed {np.sum(strict_mask)} annotations")
-    return onsets, ends
-
-
+def hr_neurokit2(
+        raw: mne.io.BaseRaw, 
+        events: np.ndarray | None, 
+        event_id: int = 1, 
+        ch_name: str | None = None, 
+        clean_peaks: bool = True,
+): 
+    pass
 def _ecg_clean_with_params(
             sampling_rate: int|float, 
             method: str, 
@@ -297,7 +268,7 @@ def _select_single_ecg_channel(raw, ch_name: str = None, return_data = False):
 def _average_HR_from_windows(
         peaks: list[list[int]] | list[int],
         sfreq: int
-):
+) -> float:
     if not len(peaks):
         return None
     if isinstance(peaks[0], int): 
@@ -305,11 +276,20 @@ def _average_HR_from_windows(
     #First remove all the empty windows - CAN REMOVE LATER
     peaks = [peak_win for peak_win in peaks if len(peak_win)]
     n_times = np.sum([np.ptp(peak_win) for peak_win in peaks])
-    n_segs = sum(len(peak_win) - 1 for peak_win in peaks)
+    n_segs = np.sum([len(peak_win) - 1 for peak_win in peaks])
     if n_segs:
         return (n_segs/n_times)*sfreq*60
     return None
 
+def _NN_from_windows(
+        peaks: list[list[int]] | list[int],
+        sfreq: int
+) -> list[list[float]]:
+    if not len(peaks): 
+        return None
+    if isinstance(peaks[0], int): 
+        peaks = [peaks]
+    return [np.diff(peak_win)*sfreq*60 for peak_win in peaks]
 
 
 if __name__ == "__main__": 
@@ -341,5 +321,6 @@ if __name__ == "__main__":
     print(raw.annotations)
     ecg_clean_neurokit(raw)
     events, ecg_idx, average_hr = find_ecg_events_neurokit(raw)
-    print(ecg_quality_sliding_window_zhao2018_neurokit(raw, keep_barely_acceptable=True, tstart=0, tend = 0))
+    print(ecg_quality_sliding_window_zhao2018_neurokit(raw, keep_barely_acceptable=True, tstart=0, tend = None))
     print(average_hr)
+    nk.hrv_time(events[:, 0], raw.info["sfreq"])
