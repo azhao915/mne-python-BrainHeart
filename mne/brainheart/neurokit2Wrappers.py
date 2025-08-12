@@ -7,7 +7,7 @@ import mne
 from mne.utils import logger, verbose
 from mne.annotations import _annotations_starts_stops
 
-from mne.brainheart.utils import _annotations_starts_stops_time_restriction
+from utils import _annotations_start_stop_improved
 
 def modify_parameters_wrapper(new_params): 
     """_summary_
@@ -19,6 +19,7 @@ def modify_parameters_wrapper(new_params):
         pass
     pass
 
+
 @verbose
 def find_ecg_events_neurokit(
         raw: mne.io.BaseRaw, 
@@ -29,23 +30,25 @@ def find_ecg_events_neurokit(
         min_segment_time: int | float | None = None,
         method: str = "neurokit", 
         clean: bool = True, 
+        keep_by_annotations: list[str] | str | None = "ecg_acceptable",
         reject_by_annotation: list[str] | str | None = ["edge", "bad"], 
         annotate_valid_ecg_period: str | None = "ecg_valid",
         verbose: bool = True
-):
+) -> tuple[np.ndarray | None, int | None, float | None]:
     """ Calls ecg_peaks from Neurokit2
     
     """
     #Added sfreq here, as needed for neurokit2.ecg_peaks
     sfreq = raw.info["sfreq"]
-    #This section follows from the original preprocessing/find_ecg_events function
-    skip_by_annotation = [] if reject_by_annotation is None else reject_by_annotation
-    del reject_by_annotation
     idx_ecg = _select_single_ecg_channel(raw, ch_name, return_data=False)
     ecg = raw.get_data(picks = idx_ecg)[0] #IF POSSIBLE DEPRECATE
-    onsets, ends = _annotations_starts_stops_time_restriction(
-        raw, skip_by_annotation, "reject_by_annotation", invert=True,
-        tmin = tstart, tmax = tend, crop_annotations = True, verbose = verbose
+    onsets, ends = _annotations_start_stop_improved(
+        raw = raw,
+        annotations_to_keep = keep_by_annotations, 
+        annotations_to_reject = reject_by_annotation,
+        tmin = tstart, 
+        tmax = tend, 
+        verbose = verbose
     )
     #Further filter by minimum time
     if min_segment_time is not None:
@@ -111,10 +114,11 @@ def ecg_quality_sliding_window_zhao2018_neurokit(
         raw,
         ch_name: str | None = None, 
         window_time_sec: int | float = 30,
-        window_overlap_sec: int | float = 0,
+        window_overlap_sec: int | float = 0, #TO FIX, Would probably need to remove this window_overlap_sec parameter
         tstart: int | float | None = 0.0,
         tend: int | float | None = None,
-        valid_ecg_annotation: str | list[str] | None = "ecg_valid",
+        valid_ecg_annotation: str | list[str] | None = None,
+        reject_by_annotation: str | list[str] | None = None,
         annotation_name: str | None = "ecg_acceptable", 
         keep_barely_acceptable: bool = False,
         verbose = True,
@@ -127,11 +131,13 @@ def ecg_quality_sliding_window_zhao2018_neurokit(
     outcomes_to_keep = ["Excellent"]
     if keep_barely_acceptable:
         outcomes_to_keep.append("Barely acceptable")
-    idx_ecg, _ = _select_single_ecg_channel(raw, ch_name, return_data=True)
-    valid_ecg_annotation = [] if valid_ecg_annotation is None else valid_ecg_annotation
-    onsets, ends = _annotations_starts_stops_time_restriction(
-        raw, valid_ecg_annotation, "valid_ecg_annotation", invert=False,
-        tmin = tstart, tmax = tend, crop_annotations = True, verbose = verbose
+    ecg_idx, _ = _select_single_ecg_channel(raw, ch_name, return_data=True)
+    onsets, ends = _annotations_start_stop_improved(
+        raw = raw,
+        annotations_to_keep = valid_ecg_annotation, 
+        annotations_to_reject = reject_by_annotation,
+        tmin = tstart, 
+        tmax = tend
     )
     onsets_quality, ends_quality = [], []
     for i, (onset, end) in enumerate(zip(onsets, ends)):
@@ -228,9 +234,6 @@ def ecg_fixpeaks_neurokit(
     if return_artifacts_dict:
         out = out + (artifacts)
     return out
-    
-    #print(artifacts["drrs"])
-
 
 def hr_neurokit2(
         raw: mne.io.BaseRaw, 
@@ -240,6 +243,8 @@ def hr_neurokit2(
         clean_peaks: bool = True,
 ): 
     pass
+
+
 def _ecg_clean_with_params(
             sampling_rate: int|float, 
             method: str, 
@@ -320,7 +325,7 @@ if __name__ == "__main__":
     #ecg_clean_neurokit(raw, method = "neurokit")
     print(raw.annotations)
     ecg_clean_neurokit(raw)
-    events, ecg_idx, average_hr = find_ecg_events_neurokit(raw)
     print(ecg_quality_sliding_window_zhao2018_neurokit(raw, keep_barely_acceptable=True, tstart=0, tend = None))
+    events, ecg_idx, average_hr = find_ecg_events_neurokit(raw, keep_by_annotations="ecg_acceptable")
     print(average_hr)
-    nk.hrv_time(events[:, 0], raw.info["sfreq"])
+    print(nk.hrv_time(events[:, 0], raw.info["sfreq"]))
