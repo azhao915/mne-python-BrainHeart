@@ -57,11 +57,12 @@ def find_ecg_events_neurokit( ############# Try and implement A Min and Max HR
         Warning("No segments were appropriate for ECG Peak Extraction")
         return None, None, None
     for i, (onset, end) in enumerate(zip(onsets, ends)):
-        ecg_segment = raw[idx_ecg, onset:end]
+        ecg_segment, _ = raw[idx_ecg, onset:end]
+        ecg_segment = ecg_segment[0]
         if clean is not None:
             #Try to avoid transients if possible
             #Further, corresponding ecg_peaks have the same ecg_clean method
-            ecg_segment = nk.ecg_clean(ecg, sfreq, method = method)
+            ecg_segment = nk.ecg_clean(ecg_segment, sfreq, method = method)
         ecg_segment_peaks = nk.ecg_findpeaks(
             ecg_segment, sfreq, method = method)["ECG_R_Peaks"]
         #Need to re-align it with the original onset
@@ -228,7 +229,6 @@ def ecg_fixpeaks_neurokit(
         method = "kubios", 
         iterative = iterative
     )
-
     for k, v in event_dict.items():
         events[artifacts[k]] = v
     out = (events, event_dict)
@@ -237,6 +237,7 @@ def ecg_fixpeaks_neurokit(
     if return_artifacts_dict:
         out = out + (artifacts,)
     return out
+
 
 def hr_neurokit2(
         raw: mne.io.BaseRaw, 
@@ -250,8 +251,12 @@ def hr_neurokit2(
         min_segment_time: int | float | None = 10.0,
         annotations_to_keep: str | list[str] | None = None, 
         annotations_to_reject: str | list[str] | None = ["edge", "bad"], 
-        annotate_hr: str | None = "hr_valid"
+        annotate_hr: str | None = "hr_valid", 
+        min_N_peaks: int = 10, #THIS NUMBER IS ARBITRARY, will probably have to address min N Peaks = 1
+        interpolation_method: str = "monotone_cubic"
 ): 
+
+    sfreq = raw.info["sfreq"]
     events = _load_ecg_peaks(
         raw = raw, 
         ch_name = ch_name, 
@@ -268,15 +273,16 @@ def hr_neurokit2(
     )
     intervals = _onsets_ends_to_intervals(onsets, ends)
     peaks = _peaks_from_intervals(intervals, events)
-    if sfreq is None: 
-        if raw is None: 
-            raise ValueError("Please Enter a Sampling Frequency")
-        sfreq = raw.info["sfreq"]
-    #NEED TO HANDLE THE WINDOWS HAVING ONLY A SINGLE PEAK
-    NNs = _inter_peaks_from_windows(peaks, sfreq)
-    for win_NN in NNs: 
-        pass #IMPLEMENT LATER
-
+    peaks = _format_peaks(peaks)
+    rate_interpolated = np.zeros((1, raw.n_times), dtype = float)
+    for peak_win, (onset, end) in zip(peaks, intervals): 
+        if len(peak_win) >= min_N_peaks: 
+            #Then the window has enough peaks
+            win_N = end - onset
+            peak_win = peak_win - onset #Align with the window
+            rate_win = nk.signal_rate(peak_win, sfreq, desired_length=win_N)
+            rate_interpolated[0, onset:end] = rate_win    
+    return rate_interpolated
 
 def _ecg_clean_with_params(
             sampling_rate: int|float, 
@@ -286,6 +292,7 @@ def _ecg_clean_with_params(
     def inner_func(ecgSignal): 
         return nk.ecg_clean(ecgSignal, sampling_rate = sampling_rate, method = method, **kwargs)
     return inner_func
+
 
 def _select_single_ecg_channel(raw, ch_name: str = None, return_data = False): 
     idx_ecg = _get_ecg_channel_index(ch_name, raw)
@@ -319,26 +326,34 @@ def _average_HR_from_windows(
         return (n_segs/n_times)*sfreq*60
     return None
 
-
 def _inter_peaks_from_windows(
         peaks: list[list[int]] | list[int],
         sfreq: int
 ) -> list[list[float]]:
-    if not len(peaks): 
-        return None
-    if isinstance(peaks[0], int): 
-        peaks = [peaks]
+    peaks = _format_peaks(peaks)
     return [np.diff(np.where(peak_win)[0])*sfreq*60 for peak_win in peaks]
 
 
-def _peaks_from_intervals(intervals, events, event_id): 
-    events = events[events[:, 2] == event_id]
+def _format_peaks(
+        peaks
+): 
+    if not len(peaks): 
+        return [[]]
+    if isinstance(peaks[0], int): 
+        peaks = [peaks]
+    return peaks
+
+
+def _peaks_from_intervals(intervals, events, event_id: int | None = None):
+    if event_id is not None:  
+        events = events[events[:, 2] == event_id]
     if not len(intervals): 
         return [[]]
+    all_peaks = events[:, 0]
     peaks = [[]]*len(intervals)
     for i, (onset, end) in enumerate(intervals): 
-        peaks_mask = (onset <= events) & (events <= end)
-        peaks[i] = events[events[peaks_mask], 0]
+        peaks_mask = (onset <= all_peaks) & (all_peaks <= end)
+        peaks[i] = all_peaks[peaks_mask]
     return peaks
 
 
@@ -355,7 +370,7 @@ def _write_events_to_stim(events: np.ndarray, raw: mne.io.BaseRaw, ch_name: str 
 
 def _write_to_stim(data: np.ndarray, raw: mne.io.BaseRaw, ch_name: str | None = None): 
     if ch_name is None: 
-        return
+        return raw
     new_info = mne.create_info([ch_name], raw.info["sfreq"], ch_types = ["stim"])
     new_raw = mne.io.RawArray(data, new_info)
     return raw.add_channels([new_raw], force_update_info = True)
@@ -405,9 +420,19 @@ if __name__ == "__main__":
     #ecg_clean_neurokit(raw, method = "neurokit")
     print(raw.annotations)
     ecg_clean_neurokit(raw)
-    print(ecg_quality_sliding_window_zhao2018_neurokit(raw, keep_barely_acceptable = True, tstart=0, tend = None))
+    print(ecg_quality_sliding_window_zhao2018_neurokit(raw, keep_barely_acceptable = False, tstart=0, tend = None))
     events, ecg_idx, average_hr = find_ecg_events_neurokit(raw, keep_by_annotations="ecg_acceptable")
     print(_write_events_to_stim(events, raw, "ecg_peaks"))
+    rate = hr_neurokit2(raw, events = events, annotations_to_keep="ecg_acceptable")
+    import matplotlib.pyplot as plt
+    plt.plot(rate[0])
+
+    # events_clean, events_dict, peaks_clean = ecg_fixpeaks_neurokit(raw, events)
+    # N = len(peaks_clean)
+    # events_clean = np.stack([peaks_clean, np.zeros(N, dtype = int), np.zeros(N, dtype = int)], axis = 1, dtype = int)
+    # rate_clean = hr_neurokit2(raw, events = events_clean, event_id = None)
+    # plt.plot(rate_clean[0])
+    plt.show()
     '''
     print(average_hr)
     print(nk.hrv_time(events[:, 0], raw.info["sfreq"]))
