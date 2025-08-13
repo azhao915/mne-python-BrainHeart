@@ -28,6 +28,11 @@ def _annotations_start_stop_improved(
         tuple[np.ndarray, np.ndarray]: _description_
     """
     #This follows from _annotations_starts_stops_time_restriction, which might be deprecated
+
+    ###################
+    # TO DO: Better implementation by mapping the intervals to boolean masks corresponding to intervals built from the all the possible onsets and ends, and then do
+    # bitwise operations
+    ###################
     Nstart = 0 if tmin is None else raw.time_as_index(tmin)
     Nend = raw.n_times if tmax is None else raw.time_as_index(tmax)
     N_seg_min = 1 if min_segment_time is None else int(min_segment_time*raw.info["sfreq"])
@@ -51,7 +56,16 @@ def _annotations_start_stop_improved(
     logger.info(f"Found Onsets: {onsets}, Ends: {ends}")
     logger.info(f"Now choosing annotations from [{tmin} to {"end" if tmax is None else tmax}] sec")
     '''
-    return _interval_difference(onsets_to_keep, ends_to_keep, onsets_to_reject, ends_to_reject, N_seg_min)
+
+    #This part uses non-boolean masks
+    #return _interval_difference(onsets_to_keep, ends_to_keep, onsets_to_reject, ends_to_reject, N_seg_min)
+
+    #Now try to use boolean masks
+    intervals_to_keep = _onsets_ends_to_intervals(onsets_to_keep, ends_to_keep)
+    intervals_to_reject = _onsets_ends_to_intervals(onsets_to_reject, ends_to_reject)
+    final_interval = _intervals_subtraction_boolean(intervals_to_keep, intervals_to_reject)
+    onsets_final, ends_final = final_interval[0, :], final_interval[1, :]
+    return onsets_final, ends_final
 
 
 @verbose
@@ -170,9 +184,18 @@ def _onsets_ends_nonoverlapping_from_raw(
     idx_to_keep = np.where(mask_to_keep)[0]
     onsets, ends = _onsets_ends_from_indices(raw, idx_to_keep)
     onsets, ends = _onsets_ends_time_restriction(onsets, ends, Nstart, Nend, True, verbose)
+    """
+    #This part doesn't involve the Boolean Mask
     onsets, ends = _onset_ends_nonoverlapping(onsets, ends)
+    """
+    #Written with Boolean Masks operations
+    intervals = _onsets_ends_to_intervals(onsets, ends)
+    if not len(intervals): 
+        #NEED TO TAKE CARE OF THIS THING
+        return np.array([]), np.array([])
+    intervals = _remove_overlap(intervals)
+    onsets, ends = intervals[:, 0], intervals[:, 1]
     return onsets, ends
-
 
 def _interval_difference(
         onsets_to_keep,
@@ -209,8 +232,123 @@ def _interval_difference(
     return final_onsets, final_ends
 
 
+#Boolean Mask Operations, which ought to be better for these
+def _onsets_ends_to_intervals(onsets, ends): 
+    return np.stack([onsets, ends], axis = 1)
+
+
+def _intervals_to_onsets_ends(intervals): 
+    if not len(intervals): 
+        return np.array([], dtype = int), np.array([], dtype = int)
+    return intervals[:, 0], intervals[:, 1] #NEED TO RECHECK THIS AXIS THING WITH THE INTERVALS
+
+
+def _unique_vals_sorted(*intervals_list: np.ndarray) -> np.ndarray: 
+    """_summary_
+
+    Returns:
+        np.ndarray: _description_
+    """
+    #Should be already sanitized
+    if not len(intervals_list): 
+        return np.array([], dtype = int)
+    return np.unique(np.concatenate(intervals_list))
+
+
+def _intervals_to_bool_mask(
+        intervals, #HERE, can't be non-zero, have to catch it before that
+        unique_vals: np.ndarray | None = None
+):
+    unique_vals = _unique_vals_sorted(intervals) if unique_vals is None else unique_vals
+    bool_mask = np.zeros(len(unique_vals) - 1, dtype = bool)
+    for onset, end in intervals:
+        start_idx = np.searchsorted(unique_vals, onset, side = "left")
+        end_idx = np.searchsorted(unique_vals, end, side = "left")
+        bool_mask[start_idx:end_idx] = True
+    return bool_mask
+
+
+def _bool_mask_to_intervals(
+        bool_mask, 
+        unique_vals
+): 
+    if not np.any(bool_mask): 
+        return np.array([], int), np.array([], int)
+    interval_starts = np.where(bool_mask & np.concatenate([[True], ~bool_mask[:-1]]))[0]
+    interval_ends = np.where(bool_mask & np.concatenate([~bool_mask[1:], [True]]))[0]
+    interval_ends = interval_ends + 1 
+    return np.stack([unique_vals[interval_starts], unique_vals[interval_ends]], axis = 1)
+
+def _intervals_union(
+        *intervals_list: np.ndarray
+): 
+    if not intervals_list: 
+        return np.array([[]], dtype = int)
+    intervals_list = _sanitize_intervals_list(intervals_list)
+    unique_vals = _unique_vals_sorted(intervals_list)
+    boolean_matrix = np.stack(
+        [_intervals_to_bool_mask(intervals, unique_vals) for intervals in intervals_list], axis = 0, dtype = bool
+    )
+    final_mask = np.any(boolean_matrix, axis = 0)
+    return _bool_mask_to_intervals(final_mask, unique_vals) 
+
+def _intervals_intersection(
+        *intervals_list: np.ndarray
+):
+    if not len(intervals_list): 
+        return np.array([[]], dtype = int)
+    intervals_list = _sanitize_intervals_list(intervals_list)
+    unique_vals = _unique_vals_sorted(intervals_list)
+    boolean_matrix = np.stack(
+        [_intervals_to_bool_mask(intervals, unique_vals) for intervals in intervals_list], axis = 0, dtype = bool
+    )
+    final_mask = np.all(boolean_matrix, axis = 0)
+    return _bool_mask_to_intervals(final_mask, unique_vals) 
+
+def _intervals_subtraction_boolean(
+        intervals1, 
+        intervals2
+): 
+    if not len(intervals1): 
+        return np.array([])
+    unique_vals = _unique_vals_sorted([intervals1, intervals2])
+    bool_mask1 = _intervals_to_bool_mask(intervals1, unique_vals)
+    bool_mask2 = _intervals_to_bool_mask(intervals2, unique_vals)
+    final_mask = bool_mask1 & ~bool_mask2
+    return _bool_mask_to_intervals(final_mask, unique_vals)
+
+
+def _sanitize_intervals_list(intervals_list): 
+    if isinstance(intervals_list, tuple): 
+        intervals_list = intervals_list[0]
+    return [intervals for intervals in intervals_list if len(intervals)]
+
+
+def _remove_overlap(intervals): 
+    if not len(intervals): 
+        return np.array([], dtype = int)
+    unique_vals = _unique_vals_sorted(intervals)
+    return _bool_mask_to_intervals(_intervals_to_bool_mask(intervals, unique_vals), unique_vals)
+
+
+def _filter_intervals_by_length(
+        intervals, 
+        Nmin: int
+): 
+    if not len(intervals): 
+        return intervals
+    lengths = intervals[:, 0] - intervals[:, 1]
+    return intervals[lengths >= Nmin]
+
+
 if __name__ == "__main__":
     onsets = np.array([0, 1, 4, 7])
     ends = np.array([5, 3, 6, 12])
     print(_onset_ends_nonoverlapping(onsets, ends))
-    print(_onset_ends_nonoverlapping(np.array([0, 1]), np.array([0, 5])))
+    matrix = _remove_overlap(_onsets_ends_to_intervals(onsets, ends))
+    print(_intervals_to_onsets_ends(matrix))
+    onsets = np.array([0, 1])
+    ends = np.array([0, 5])
+    print(_onset_ends_nonoverlapping(onsets, ends))
+    matrix = _remove_overlap(_onsets_ends_to_intervals(onsets, ends))
+    print(_intervals_to_onsets_ends(matrix))

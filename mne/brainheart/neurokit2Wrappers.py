@@ -320,7 +320,6 @@ if __name__ == "__main__":
     bids_path = bids_paths.match()[0]
     #Load
     raw = mne_bids.read_raw_bids(bids_path)
-    #raw.crop(tmax = 60)
     raw.load_data()
     #ecg_clean_neurokit(raw, method = "neurokit")
     print(raw.annotations)
