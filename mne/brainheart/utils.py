@@ -63,8 +63,9 @@ def _annotations_start_stop_improved(
     #Now try to use boolean masks
     intervals_to_keep = _onsets_ends_to_intervals(onsets_to_keep, ends_to_keep)
     intervals_to_reject = _onsets_ends_to_intervals(onsets_to_reject, ends_to_reject)
-    final_interval = _intervals_subtraction_boolean(intervals_to_keep, intervals_to_reject)
-    onsets_final, ends_final = final_interval[0, :], final_interval[1, :]
+    final_intervals = _intervals_subtraction_boolean(intervals_to_keep, intervals_to_reject)
+    final_intervals = _filter_intervals_by_length(final_intervals, N_seg_min)
+    onsets_final, ends_final = _intervals_to_onsets_ends(final_intervals)
     return onsets_final, ends_final
 
 
@@ -243,6 +244,17 @@ def _intervals_to_onsets_ends(intervals):
     return intervals[:, 0], intervals[:, 1] #NEED TO RECHECK THIS AXIS THING WITH THE INTERVALS
 
 
+def _filter_intervals_by_length(
+        intervals, 
+        Nmin: int | None
+):
+    if Nmin is None or not len(intervals): 
+        return intervals 
+    lengths = intervals[:, 1] - intervals[:, 0]
+    return intervals[lengths >= Nmin]
+
+
+
 def _unique_vals_sorted(*intervals_list: np.ndarray) -> np.ndarray: 
     """_summary_
 
@@ -311,7 +323,8 @@ def _intervals_subtraction_boolean(
 ): 
     if not len(intervals1): 
         return np.array([])
-    unique_vals = _unique_vals_sorted([intervals1, intervals2])
+    intervals_list = _sanitize_intervals_list([intervals1, intervals2])
+    unique_vals = _unique_vals_sorted(intervals_list)
     bool_mask1 = _intervals_to_bool_mask(intervals1, unique_vals)
     bool_mask2 = _intervals_to_bool_mask(intervals2, unique_vals)
     final_mask = bool_mask1 & ~bool_mask2
@@ -329,17 +342,6 @@ def _remove_overlap(intervals):
         return np.array([], dtype = int)
     unique_vals = _unique_vals_sorted(intervals)
     return _bool_mask_to_intervals(_intervals_to_bool_mask(intervals, unique_vals), unique_vals)
-
-
-def _filter_intervals_by_length(
-        intervals, 
-        Nmin: int
-): 
-    if not len(intervals): 
-        return intervals
-    lengths = intervals[:, 0] - intervals[:, 1]
-    return intervals[lengths >= Nmin]
-
 
 if __name__ == "__main__":
     onsets = np.array([0, 1, 4, 7])
