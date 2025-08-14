@@ -191,6 +191,15 @@ def ecg_clean_neurokit(
         ch_name, 
         return_data=False
     )
+    def _ecg_clean_with_params(
+            sampling_rate: int|float, 
+            method: str, 
+            **kwargs
+    ): 
+        def inner_func(ecgSignal): 
+            return nk.ecg_clean(ecgSignal, sampling_rate = sampling_rate, method = method, **kwargs)
+        return inner_func
+
     raw.apply_function(
         _ecg_clean_with_params(sampling_rate=sfreq, method = method, **kwargs),
         picks = idx_ecg, 
@@ -255,7 +264,6 @@ def hr_neurokit2(
         min_N_peaks: int = 10, #THIS NUMBER IS ARBITRARY, will probably have to address min N Peaks = 1
         interpolation_method: str = "monotone_cubic"
 ): 
-
     sfreq = raw.info["sfreq"]
     events = _load_ecg_peaks(
         raw = raw, 
@@ -280,19 +288,54 @@ def hr_neurokit2(
             #Then the window has enough peaks
             win_N = end - onset
             peak_win = peak_win - onset #Align with the window
-            rate_win = nk.signal_rate(peak_win, sfreq, desired_length=win_N)
+            rate_win = nk.signal_rate(peak_win, sfreq, desired_length=win_N, interpolation_method = interpolation_method)
             rate_interpolated[0, onset:end] = rate_win    
     return rate_interpolated
 
-def _ecg_clean_with_params(
-            sampling_rate: int|float, 
-            method: str, 
-            **kwargs
-    ): 
-    def inner_func(ecgSignal): 
-        return nk.ecg_clean(ecgSignal, sampling_rate = sampling_rate, method = method, **kwargs)
-    return inner_func
 
+# Similar to previous function
+def ecg_phase_neurokit2(
+        raw: mne.io.BaseRaw, 
+        sfreq: int | None = None,
+        events: np.ndarray | None = None, 
+        event_id: int = 1, 
+        ch_name: str | None = None, 
+        clean_peaks: bool = True, #Will need to implement later
+        tmin: int | float | None = 0.0, 
+        tmax: int | float | None = None,
+        min_segment_time: int | float | None = 10.0,
+        annotations_to_keep: str | list[str] | None = None, 
+        annotations_to_reject: str | list[str] | None = ["edge", "bad"], 
+        annotate_phase: str | None = "ecg_phase_valid", 
+        min_N_peaks: int = 10, #THIS NUMBER IS ARBITRARY, will probably have to address min N Peaks = 1
+): 
+    sfreq = raw.info["sfreq"] ####### Can Try and Write these to a function
+    events = _load_ecg_peaks(
+        raw = raw, 
+        ch_name = ch_name, 
+        events = events, 
+        event_id = event_id
+    )
+    onsets, ends = _annotations_start_stop_improved(
+        raw = raw, 
+        annotations_to_keep = annotations_to_keep, 
+        annotations_to_reject = annotations_to_reject, 
+        tmin = tmin,
+        tmax = tmax, 
+        min_segment_time = min_segment_time
+    )
+    intervals = _onsets_ends_to_intervals(onsets, ends)
+    peaks = _peaks_from_intervals(intervals, events)
+    peaks = _format_peaks(peaks)
+    ecg_phase = np.zeros((1, raw.n_times), dtype = float)
+    for peak_win, (onset, end) in zip(peaks, intervals): 
+        if len(peak_win) >= min_N_peaks: 
+            #Then the window has enough peaks
+            win_N = end - onset
+            peak_win = peak_win - onset #Align with the window
+            rate_win = nk.ecg_phase(peak_win, sfreq, desired_length=win_N, interpolation_method = interpolation_method)
+            ecg_phase[0, onset:end] = rate_win    
+    
 
 def _select_single_ecg_channel(raw, ch_name: str = None, return_data = False): 
     idx_ecg = _get_ecg_channel_index(ch_name, raw)
@@ -427,11 +470,11 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     plt.plot(rate[0])
 
-    # events_clean, events_dict, peaks_clean = ecg_fixpeaks_neurokit(raw, events)
-    # N = len(peaks_clean)
-    # events_clean = np.stack([peaks_clean, np.zeros(N, dtype = int), np.zeros(N, dtype = int)], axis = 1, dtype = int)
-    # rate_clean = hr_neurokit2(raw, events = events_clean, event_id = None)
-    # plt.plot(rate_clean[0])
+    events_clean, events_dict, peaks_clean = ecg_fixpeaks_neurokit(raw, events)
+    N = len(peaks_clean)
+    events_clean = np.stack([peaks_clean, np.zeros(N, dtype = int), np.zeros(N, dtype = int)], axis = 1, dtype = int)
+    rate_clean = hr_neurokit2(raw, events = events_clean, event_id = None, annotations_to_keep="ecg_acceptable")
+    plt.plot(rate_clean[0])
     plt.show()
     '''
     print(average_hr)

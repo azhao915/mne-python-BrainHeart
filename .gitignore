@@ -103,3 +103,4 @@ venv/
 .ruff_cache/
 .ipynb_checkpoints/
 TESTS/OriginalHEPAnalysis.ipynb
+mne/brainheart/test.ipynb
