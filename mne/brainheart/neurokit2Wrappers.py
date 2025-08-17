@@ -1,13 +1,14 @@
 import neurokit2 as nk
 
 import numpy as np
+import pandas as pd
 
 from mne.preprocessing.ecg import _get_ecg_channel_index #Keep it aligned with the original MNE
 import mne
 from mne.utils import logger, verbose
 from mne.annotations import _annotations_starts_stops
 
-from utils import _annotations_start_stop_improved, _onsets_ends_to_intervals
+from utils import _annotations_start_stop_improved, _onsets_ends_to_intervals, _intervals_to_onsets_ends
 
 def modify_parameters_wrapper(new_params): 
     """_summary_
@@ -18,6 +19,81 @@ def modify_parameters_wrapper(new_params):
     def decorator(): 
         pass
     pass
+
+
+def ecg_process_neurokit(
+        raw: mne.io.BaseRaw, 
+        ecg_ch_name: str | None = None,
+        **kwargs
+): 
+    idx_ecg, ecg_data = _select_single_ecg_channel(raw, ecg_ch_name, return_data = True)
+    ecg_dict, ecg_event_indices = nk.ecg_process(ecg_data, sampling_rate = raw.info["sfreq"], **kwargs)
+    ch_types = neurokit_ch_names_to_types(list(ecg_dict.columns))
+    _write_events_dict_to_stim(ecg_dict, raw, ch_types = ch_types)
+    return raw, ecg_event_indices
+
+
+def neurokit_ch_names_to_types(
+        ch_names: str | list[str],
+): 
+    if not len(ch_names): 
+        return []
+    if isinstance(ch_names, str): 
+        ch_names = [ch_names]
+    return [_neurokit_name_to_type(name) for name in ch_names]
+
+def _neurokit_name_to_type(
+        name: str
+): 
+    name = name.lower()
+    if "raw" in name or "clean" in name: 
+        return "ecg"
+    if "rate" in name: 
+        return "ecg" # Will need to modify this at some point
+    return "stim"
+
+def ecg_quality_reject(
+        raw: mne.io.BaseRaw,
+        quality_thresh: float = 0.8,
+        annotate_quality_name: str = "ecg_quality",
+        ecg_quality: np.ndarray | None = None, 
+        ecg_quality_ch_name: str | None = "ECG_Quality", 
+        min_hr: int | float | None = 40,
+        max_hr: int | float | None = 200
+): 
+    sfreq = raw.info["sfreq"]
+    ecg_quality = load_ecg_quality(raw, ecg_quality, ecg_quality_ch_name)
+    quality_mask = (quality_thresh <= ecg_quality)
+    min_hr = 0 if min_hr is None else min_hr
+    max_hr = np.inf if max_hr is None else max_hr
+    hr_mask = (min_hr <= ecg_quality) & (ecg_quality <= max_hr)
+    final_mask = quality_mask & hr_mask
+    intervals_quality = _intervals_from_mask(final_mask)
+    onset_quality, ends_quality = _intervals_to_onsets_ends(intervals_quality)
+    # Now annotate the raw object
+    if not len(intervals_quality):
+        ecg_annotations = mne.Annotations(
+            onset = onset_quality/sfreq,
+            duration = (ends_quality - onset_quality)/sfreq,
+            description = annotate_quality_name, 
+        )   
+        raw.set_annotations(raw.annotations + ecg_annotations)
+    else: 
+        raise Warning("No Segments With High Enough Quality Found")
+    #Now add to existing annotations
+    return raw, intervals_quality
+
+
+def load_ecg_quality(
+        raw: mne.io.BaseRaw,
+        ecg_quality: np.ndarray | None = None, 
+        ecg_quality_ch_name: str | None = None
+): 
+    if ecg_quality is None: 
+        if ecg_quality_ch_name is None: 
+            raise ValueError("Please Enter a Value for Either the ECG Quality or the ECG Quality Channel Name")
+        ecg_quality = raw.get_data(picks = ecg_quality_ch_name, return_times = False)
+    return ecg_quality
 
 
 @verbose
@@ -41,7 +117,6 @@ def find_ecg_events_neurokit( ############# Try and implement A Min and Max HR
     #Added sfreq here, as needed for neurokit2.ecg_peaks
     sfreq = raw.info["sfreq"]
     idx_ecg = _select_single_ecg_channel(raw, ch_name, return_data=False)
-    ecg = raw.get_data(picks = idx_ecg)[0] #IF POSSIBLE DEPRECATE
     onsets, ends = _annotations_start_stop_improved(
         raw = raw,
         annotations_to_keep = keep_by_annotations, 
@@ -94,19 +169,6 @@ def find_ecg_events_neurokit( ############# Try and implement A Min and Max HR
         idx_ecg,
         average_hr
         )
-
-def ecg_quality_zhao2018_neurokit(
-        raw: mne.io.BaseRaw, 
-        ch_name: str | None = None, 
-        tstart: int | float | None = 0.0, 
-        tend: int | float | None = None, 
-        valid_ecg_annotation: str | list[str] | None = "ecg_valid", 
-        annotation_name: str | None = "ecg_excellent", 
-        keep_barely_acceptable: bool = False,
-        verbose: bool = True
-):
-    pass
-
 
 @verbose
 def ecg_quality_sliding_window_zhao2018_neurokit(
@@ -179,6 +241,37 @@ def ecg_quality_sliding_window_zhao2018_neurokit(
     raw.set_annotations(raw.annotations + ecg_annotations)
     return onsets_quality, ends_quality
 
+
+def peak_quality_mean_template_neurokit(
+        raw: mne.io.BaseRaw, 
+        ecg_ch_name: str | None = None,
+        peaks_ch_name: str | None = None,
+        events: np.ndarray | None = None, 
+        event_id: int | None = None,
+        annotations_to_keep: str | list[str] | None = ["ecg_valid", "ecg_acceptable"], #Don't know if this is the best way to handle this
+        annotations_to_reject: str | list[str] | None = ["bad, edge"],
+        method: str = "templatematch", 
+): 
+    if method.lower() == "zhao2018":
+        return ValueError("For Zhao 2018, use ecg_quality_sliding_window_zhao201_neurokit()")
+    events = _load_ecg_peaks(raw, peaks_ch_name, events, event_id)
+    ecg_idx, ecg_data = _select_single_ecg_channel(raw, ecg_ch_name, return_data = True)
+    quality = nk.ecg_quality(
+        ecg_data, 
+        rpeaks = events[:, 0], 
+        sampling_rate = raw.info["sfreq"], 
+        method = method
+    )
+    onsets, ends = _annotations_start_stop_improved(
+        raw = raw, 
+        annotations_to_keep = annotations_to_keep, 
+        annotations_to_reject = annotations_to_reject, 
+        min_segment_time = 0
+    )
+    mask = _mask_from_intervals(_onsets_ends_to_intervals(onsets, ends), raw.n_times)
+    return quality*mask
+
+
 def ecg_clean_neurokit(
         raw, 
         ch_name = None, 
@@ -250,7 +343,6 @@ def ecg_fixpeaks_neurokit(
 
 def hr_neurokit2(
         raw: mne.io.BaseRaw, 
-        sfreq: int | None = None,
         events: np.ndarray | None = None, 
         event_id: int = 1, 
         ch_name: str | None = None, 
@@ -291,6 +383,23 @@ def hr_neurokit2(
             rate_win = nk.signal_rate(peak_win, sfreq, desired_length=win_N, interpolation_method = interpolation_method)
             rate_interpolated[0, onset:end] = rate_win    
     return rate_interpolated
+
+
+def ecg_delineate_neurokit2(
+        raw: mne.io.BaseRaw, 
+        events: np.ndarray | None = None, 
+        event_id: int = 1, 
+        ecg_ch_name: str | None = None,
+        ecg_peaks_name: str | None = None 
+): 
+    ecg_idx, ecg_data = _select_single_ecg_channel(raw, ecg_ch_name, True)
+    events = _load_ecg_peaks(raw, ecg_peaks_name, events, event_id)
+    waves, signals = nk.ecg_delineate(
+        ecg_data,
+        rpeaks = events[:, 0],
+        sampling_rate = raw.info["sfreq"]
+    )
+    _write_events_dict_to_stim(waves, raw)
 
 
 # Similar to previous function
@@ -335,6 +444,8 @@ def ecg_phase_neurokit2(
             peak_win = peak_win - onset #Align with the window
             rate_win = nk.ecg_phase(peak_win, sfreq, desired_length=win_N, interpolation_method = interpolation_method)
             ecg_phase[0, onset:end] = rate_win    
+
+    ########## NEED TO REWORK ON THIS
     
 
 def _select_single_ecg_channel(raw, ch_name: str = None, return_data = False): 
@@ -368,6 +479,7 @@ def _average_HR_from_windows(
     if n_segs:
         return (n_segs/n_times)*sfreq*60
     return None
+
 
 def _inter_peaks_from_windows(
         peaks: list[list[int]] | list[int],
@@ -411,10 +523,28 @@ def _write_events_to_stim(events: np.ndarray, raw: mne.io.BaseRaw, ch_name: str 
     return _write_to_stim(data, raw, ch_name)
 
 
+def _write_events_dict_to_stim(events_dict: dict, raw: mne.io.BaseRaw, ch_types: list[str] | str | None = None): 
+    data = events_dict.values
+    if data.ndim == 1: 
+        data = np.reshape(data, (len(data), 1))
+    data = data.T
+    ch_names = events_dict.keys()
+    ch_names = list(ch_names)
+    if ch_types is None: 
+        ch_types = ["stim"]*len(ch_names)
+    elif isinstance(ch_types, str): 
+        ch_types = [ch_types]*len(ch_names)
+    new_info = mne.create_info(ch_names, raw.info["sfreq"], ch_types = ch_types)
+    new_raw = mne.io.RawArray(data, new_info)
+    return raw.add_channels([new_raw], force_update_info = True)
+
 def _write_to_stim(data: np.ndarray, raw: mne.io.BaseRaw, ch_name: str | None = None): 
     if ch_name is None: 
         return raw
     new_info = mne.create_info([ch_name], raw.info["sfreq"], ch_types = ["stim"])
+    if isinstance(data, pd.Series): 
+        data = data.values
+        data = np.reshape(data, (1, len(data)))
     new_raw = mne.io.RawArray(data, new_info)
     return raw.add_channels([new_raw], force_update_info = True)
 
@@ -435,6 +565,23 @@ def _load_ecg_peaks(raw: mne.io.BaseRaw | None = None, ch_name: str | None = "ec
                 ), axis = 0)
             ]
     return events
+
+
+def _mask_from_intervals(intervals, N): 
+    mask = np.zeros(N, dtype = bool)
+    for onset, end in intervals: 
+        mask[onset:end] = True
+    return mask
+
+
+def _intervals_from_mask(mask): 
+    # Taken partially from my utils.bool_mask_to_intervals
+    if not np.any(mask): 
+        return np.array([], int), np.array([], int)
+    interval_starts = np.where(mask & np.concatenate([[True], ~mask[:-1]]))[0]
+    interval_ends = np.where(mask & np.concatenate([~mask[1:], [True]]))[0]
+    return _onsets_ends_to_intervals(interval_starts, interval_ends)
+    
 
 if __name__ == "__main__": 
 
@@ -460,11 +607,9 @@ if __name__ == "__main__":
     #Load
     raw = mne_bids.read_raw_bids(bids_path)
     raw.load_data()
-    #ecg_clean_neurokit(raw, method = "neurokit")
-    print(raw.annotations)
-    ecg_clean_neurokit(raw)
-    print(ecg_quality_sliding_window_zhao2018_neurokit(raw, keep_barely_acceptable = False, tstart=0, tend = None))
-    events, ecg_idx, average_hr = find_ecg_events_neurokit(raw, keep_by_annotations="ecg_acceptable")
+    ecg_process_neurokit(raw)
+    print(1)
+    '''
     print(_write_events_to_stim(events, raw, "ecg_peaks"))
     rate = hr_neurokit2(raw, events = events, annotations_to_keep="ecg_acceptable")
     import matplotlib.pyplot as plt
@@ -476,6 +621,7 @@ if __name__ == "__main__":
     rate_clean = hr_neurokit2(raw, events = events_clean, event_id = None, annotations_to_keep="ecg_acceptable")
     plt.plot(rate_clean[0])
     plt.show()
+    '''
     '''
     print(average_hr)
     print(nk.hrv_time(events[:, 0], raw.info["sfreq"]))

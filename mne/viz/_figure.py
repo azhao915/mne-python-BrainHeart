@@ -739,6 +739,7 @@ def _get_browser(show, block, **kwargs):
                 return fig
 
     # Initialize Browser
+    print(backend)
     fig = backend._init_browser(**kwargs)
     _show_browser(show=show, block=block, fig=fig)
 

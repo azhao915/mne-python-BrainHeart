@@ -13,7 +13,6 @@ def _annotations_start_stop_improved(
     tmin: int | float | None = 0.0,
     tmax: int | float | None = None,
     min_segment_time: int | float | None = None,
-    name: str = "Annotation", 
     verbose: bool = True
 ) -> tuple[np.ndarray, np.ndarray]:
     """_summary_
@@ -252,7 +251,6 @@ def _filter_intervals_by_length(
         return intervals 
     lengths = intervals[:, 1] - intervals[:, 0]
     return intervals[lengths >= Nmin]
-
 
 
 def _unique_vals_sorted(*intervals_list: np.ndarray) -> np.ndarray: 
