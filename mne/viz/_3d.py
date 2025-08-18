@@ -1664,7 +1664,6 @@ def _plot_sensors_3d(
                 )
                 actors["eeg"].append(actor)
             elif len(colors) == 1 and len(scales) == 1:
-                # Single color mode (one actor)
                 actor, _ = _plot_glyphs(
                     renderer=renderer,
                     loc=sens_loc[mask] * unit_scalar,
