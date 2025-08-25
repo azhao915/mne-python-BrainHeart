@@ -140,7 +140,8 @@ def setup_mri_picking(
 
 
     def update_mri_plot(point): 
-        print("Updating MRI")
+        print(f"Updating MRI, point = {point}")
+        # TO DO: Need to convert make sure the position is correct
         coords = list(point)
         coords_anat = np.array((coords + [1]))
         coords_vox = affine_inv @ coords_anat
@@ -195,7 +196,7 @@ def setup_mri_picking(
             ax.set_xticks([])
             ax.set_yticks([])
 
-        if hasattr(fig, "_colorbar"): 
+        if hasattr(fig, "_colorbar") and fig._colorbar is not None: 
             fig._colorbar.remove()
         fig._colorbar = fig.colorbar(im1, ax = axes, shrink = 0.8, aspect = 20, pad = 0.02)
         fig._colorbar.ax.tick_params(colors = "white")

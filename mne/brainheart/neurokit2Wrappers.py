@@ -8,7 +8,10 @@ import mne
 from mne.utils import logger, verbose
 from mne.annotations import _annotations_starts_stops
 
-from utils import _annotations_start_stop_improved, _onsets_ends_to_intervals, _intervals_to_onsets_ends
+from functools import partial
+
+from mne.brainheart.annotations_utils import _annotations_start_stop_improved, _onsets_ends_to_intervals, _intervals_to_onsets_ends
+from event_detection import find_events, sliding_window_accept_reject
 
 def modify_parameters_wrapper(new_params): 
     """_summary_
@@ -28,7 +31,7 @@ def ecg_process_neurokit(
 ): 
     idx_ecg, ecg_data = _select_single_ecg_channel(raw, ecg_ch_name, return_data = True)
     ecg_dict, ecg_event_indices = nk.ecg_process(ecg_data, sampling_rate = raw.info["sfreq"], **kwargs)
-    ch_types = neurokit_ch_names_to_types(list(ecg_dict.columns))
+    ch_types = neurokit_ch_names_to_types(ecg_dict.columns)
     _write_events_dict_to_stim(ecg_dict, raw, ch_types = ch_types)
     return raw, ecg_event_indices
 
@@ -40,6 +43,8 @@ def neurokit_ch_names_to_types(
         return []
     if isinstance(ch_names, str): 
         ch_names = [ch_names]
+    elif isinstance(ch_names, pd.Series): 
+        ch_names = list(ch_names)
     return [_neurokit_name_to_type(name) for name in ch_names]
 
 def _neurokit_name_to_type(
@@ -95,7 +100,6 @@ def load_ecg_quality(
         ecg_quality = raw.get_data(picks = ecg_quality_ch_name, return_times = False)
     return ecg_quality
 
-
 @verbose
 def find_ecg_events_neurokit( ############# Try and implement A Min and Max HR
         raw: mne.io.BaseRaw, 
@@ -107,68 +111,35 @@ def find_ecg_events_neurokit( ############# Try and implement A Min and Max HR
         method: str = "neurokit", 
         clean: bool = True, 
         keep_by_annotations: list[str] | str | None = "ecg_acceptable",
-        reject_by_annotation: list[str] | str | None = ["edge", "bad"], 
+        reject_by_annotations: list[str] | str | None = ["edge", "bad"], 
         annotate_valid_ecg_period: str | None = "ecg_valid",
         verbose: bool = True
 ) -> tuple[np.ndarray | None, int | None, float | None]:
-    """ Calls ecg_peaks from Neurokit2
-    
-    """
-    #Added sfreq here, as needed for neurokit2.ecg_peaks
-    sfreq = raw.info["sfreq"]
     idx_ecg = _select_single_ecg_channel(raw, ch_name, return_data=False)
-    onsets, ends = _annotations_start_stop_improved(
-        raw = raw,
-        annotations_to_keep = keep_by_annotations, 
-        annotations_to_reject = reject_by_annotation,
-        tmin = tstart, 
-        tmax = tend, 
+    nk_ecg_peaks_wrapper = partial(
+        lambda ecg_segment, sfreq, method: nk.ecg_peaks(ecg_segment.flatten(), sampling_rate=sfreq, method=method)[1]["ECG_R_Peaks"],
+        method=method
+    )
+    clean_func =  partial(
+        lambda ecg_segment, sfreq, method: nk.ecg_clean(ecg_segment.flatten(), sampling_rate=sfreq, method=method),
+        method=method
+    ) if clean else None
+    events, idx_ecg, rate = find_events(
+        raw = raw, 
+        pick = idx_ecg, 
+        event_finder = nk_ecg_peaks_wrapper, 
+        event_id = event_id, 
+        tstart = tstart, 
+        tend = tend, 
         min_segment_time = min_segment_time,
+        clean = clean_func, 
+        keep_by_annotations = keep_by_annotations,
+        reject_by_annotations = reject_by_annotations, 
+        annotate_valid_period = annotate_valid_ecg_period,
         verbose = verbose
     )
-    peaks = [[]]*len(onsets) #Allows for future parallelization if necessary
-    if not len(onsets):
-        #Then have found no appropriate segments
-        Warning("No segments were appropriate for ECG Peak Extraction")
-        return None, None, None
-    for i, (onset, end) in enumerate(zip(onsets, ends)):
-        ecg_segment, _ = raw[idx_ecg, onset:end]
-        ecg_segment = ecg_segment[0]
-        if clean is not None:
-            #Try to avoid transients if possible
-            #Further, corresponding ecg_peaks have the same ecg_clean method
-            ecg_segment = nk.ecg_clean(ecg_segment, sfreq, method = method)
-        ecg_segment_peaks = nk.ecg_findpeaks(
-            ecg_segment, sfreq, method = method)["ECG_R_Peaks"]
-        #Need to re-align it with the original onset
-        ecg_segment_peaks = ecg_segment_peaks + onset
-        peaks[i] = ecg_segment_peaks
-    #First eliminate the empty windows - CHECK BACK LATER
-    peaks = [peak for peak in peaks if len(peak)]
-    peaks_combined = np.concatenate(peaks)
-    n_peaks = len(peaks_combined)
-    if not n_peaks:
-        Warning("No peaks were found")
-        return None, None, None
-    #Now Annotate the valid ecg periods
-    if annotate_valid_ecg_period is not None:
-        ecg_annotations = mne.Annotations(
-            onset = onsets/sfreq,
-            duration = (ends - onsets)/sfreq,
-            description = annotate_valid_ecg_period, 
-        )
-        #Now add to existing annotations
-        raw.set_annotations(raw.annotations + ecg_annotations)
-    average_hr = _average_HR_from_windows(peaks, sfreq)
-    return (
-        np.stack([
-            peaks_combined, 
-            np.zeros(n_peaks, dtype = int), 
-            np.ones(n_peaks, dtype = int)*event_id
-        ], axis = 1), 
-        idx_ecg,
-        average_hr
-        )
+    return events, idx_ecg, rate*60
+
 
 @verbose
 def ecg_quality_sliding_window_zhao2018_neurokit(
@@ -178,69 +149,35 @@ def ecg_quality_sliding_window_zhao2018_neurokit(
         window_overlap_sec: int | float = 0, #TO FIX, Would probably need to remove this window_overlap_sec parameter
         tstart: int | float | None = 0.0,
         tend: int | float | None = None,
-        valid_ecg_annotation: str | list[str] | None = None,
-        reject_by_annotation: str | list[str] | None = None,
+        valid_ecg_annotations: str | list[str] | None = None,
+        reject_by_annotations: str | list[str] | None = None,
         annotation_name: str | None = "ecg_acceptable", 
         keep_barely_acceptable: bool = False,
         verbose = True,
         **kwargs
 ):  
-    sfreq = raw.info["sfreq"]
-    window_N = int(window_time_sec*sfreq)
-    window_overlap_N = int(window_overlap_sec*sfreq)
-    assert window_overlap_N < window_N
     outcomes_to_keep = ["Excellent"]
     if keep_barely_acceptable:
         outcomes_to_keep.append("Barely acceptable")
     ecg_idx, _ = _select_single_ecg_channel(raw, ch_name, return_data=True)
-    onsets, ends = _annotations_start_stop_improved(
-        raw = raw,
-        annotations_to_keep = valid_ecg_annotation, 
-        annotations_to_reject = reject_by_annotation,
-        tmin = tstart, 
-        tmax = tend
+    nk_ecg_quality_wrapper = partial(
+        lambda ecg_segment, sfreq, method, **kwargs: (nk.ecg_quality(ecg_segment.flatten(), sampling_rate=sfreq, method=method, **kwargs) in outcomes_to_keep),
+        method="zhao2018"
     )
-    onsets_quality, ends_quality = [], []
-    for i, (onset, end) in enumerate(zip(onsets, ends)):
-        curr_window_acceptable_onset = None
-        curr_window_acceptable_end = None
-        for window_onset in range(onset, end - window_N, window_N - window_overlap_N):
-            window_end = window_onset + window_N
-            ecg_segment = raw[ecg_idx, window_onset:window_end][0][0]
-            outcome = nk.ecg_quality(
-                ecg_segment, 
-                rpeaks = None,
-                sampling_rate = sfreq,
-                method = "zhao2018", 
-                **kwargs
-            )
-            if outcome in outcomes_to_keep:
-                if curr_window_acceptable_onset is None:
-                    curr_window_acceptable_onset = window_onset
-                curr_window_acceptable_end = window_end
-            else:
-                #Quality has dropped, save the current segment if there is one
-                if curr_window_acceptable_end is not None:
-                    onsets_quality.append(curr_window_acceptable_onset)
-                    ends_quality.append(curr_window_acceptable_end)
-                    curr_window_acceptable_onset = None
-                    curr_window_acceptable_end = None
-        #Save the final segment if it exists
-        if curr_window_acceptable_end is not None:
-            onsets_quality.append(curr_window_acceptable_onset)
-            ends_quality.append(curr_window_acceptable_end)
-    #now annotate the raw object
-    #First convert back to np.ndarray
-    onsets_quality = np.array(onsets_quality, dtype = int)
-    ends_quality = np.array(ends_quality, dtype = int)
-    ecg_annotations = mne.Annotations(
-        onset = onsets_quality/sfreq,
-        duration = (ends_quality - onsets_quality)/sfreq,
-        description = annotation_name, 
+    return sliding_window_accept_reject(
+        raw = raw, 
+        pick = ecg_idx, 
+        accept_reject_func = nk_ecg_quality_wrapper, 
+        window_time_sec = window_time_sec, 
+        window_overlap_sec = window_overlap_sec, 
+        tstart = tstart, 
+        tend = tend, 
+        valid_annotations = valid_ecg_annotations,
+        reject_by_annotations = reject_by_annotations,
+        annotations_name = annotation_name, 
+        verbose = verbose, 
+        **kwargs
     )
-    raw.set_annotations(raw.annotations + ecg_annotations)
-    return onsets_quality, ends_quality
-
 
 def peak_quality_mean_template_neurokit(
         raw: mne.io.BaseRaw, 
@@ -607,8 +544,9 @@ if __name__ == "__main__":
     #Load
     raw = mne_bids.read_raw_bids(bids_path)
     raw.load_data()
-    ecg_process_neurokit(raw)
-    print(1)
+    #ecg_process_neurokit(raw)
+    events = find_ecg_events_neurokit(raw, keep_by_annotations = None)
+    print(ecg_quality_sliding_window_zhao2018_neurokit(raw, valid_ecg_annotations = "ecg_valid"))
     '''
     print(_write_events_to_stim(events, raw, "ecg_peaks"))
     rate = hr_neurokit2(raw, events = events, annotations_to_keep="ecg_acceptable")
