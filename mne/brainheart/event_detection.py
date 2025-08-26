@@ -22,9 +22,6 @@ def find_events(
         verbose: bool = True, 
         **kwargs
 ) -> tuple[np.ndarray | None, int | None, float | None]:
-    """ 
-    
-    """
     #Added sfreq here, as needed for neurokit2.ecg_peaks
     sfreq = raw.info["sfreq"]
     onsets, ends = _annotations_start_stop_improved(
@@ -38,7 +35,7 @@ def find_events(
     )
     if not len(onsets):
         #Then have found no appropriate segments
-        Warning("No segments were appropriate for ECG Peak Extraction")
+        print("No segments were appropriate for ECG Peak Extraction")
         return None, None, None
     peaks = [[]]*len(onsets) #Allows for future parallelization if necessary
     for i, (onset, end) in enumerate(zip(onsets, ends)):
@@ -97,7 +94,7 @@ def _average_rate_from_windows(
 
 
 def sliding_window_accept_reject(
-        raw,
+        raw: mne.io.BaseRaw,
         pick: str | int | list[str] | list[int],
         accept_reject_func: Callable, 
         window_time_sec: int | float = 30,
@@ -110,6 +107,24 @@ def sliding_window_accept_reject(
         verbose = True,
         **kwargs
 ): 
+    """_summary_
+
+    Args:
+        raw (mne.io.BaseRaw): The MNE Raw Object
+        pick (str | int | list[str] | list[int]): Channel Picks
+        accept_reject_func (Callable): _description_
+        window_time_sec (int | float, optional): _description_. Defaults to 30.
+        window_overlap_sec (int | float, optional): _description_. Defaults to 0.
+        Wouldprobablyneedtoremovethiswindow_overlap_secparametertstart (int | float | None, optional): _description_. Defaults to 0.0.
+        tend (int | float | None, optional): _description_. Defaults to None.
+        valid_annotations (str | list[str] | None, optional): _description_. Defaults to None.
+        reject_by_annotations (str | list[str] | None, optional): _description_. Defaults to None.
+        annotations_name (str | None, optional): _description_. Defaults to "ecg_acceptable".
+        verbose (bool, optional): _description_. Defaults to True.
+
+    Returns:
+        _type_: _description_
+    """
     sfreq = raw.info["sfreq"]
     window_N = int(window_time_sec*sfreq)
     window_overlap_N = int(window_overlap_sec*sfreq)

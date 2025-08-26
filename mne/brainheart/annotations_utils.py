@@ -232,10 +232,10 @@ def _interval_difference(
     return final_onsets, final_ends
 
 
-#Boolean Mask Operations, which ought to be better for these
 def _onsets_ends_to_intervals(onsets, ends): 
     return np.stack([onsets, ends], axis = 1)
 
+# Boolean Mask Operations
 
 def _intervals_to_onsets_ends(intervals): 
     if not len(intervals): 

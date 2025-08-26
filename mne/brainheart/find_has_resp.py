@@ -37,14 +37,15 @@ def find_subjects_with_electrodes_bids(
             if not len(subject_channels_files): 
                 raise Warning(f"No Channel File found for Subject {subject}")
         else: 
-            raise Warning(f"Subject {subject} has no directory")
+            raise Warning(f"Subject {subject} has no directory {subject_path}")
         for file in subject_channels_files: 
             subject_df = pd.read_csv(
                 os.path.join(subject_path, file), sep = "\t"
             )
             if column not in subject_df.columns: 
                 raise Warning(f"File {os.path.basename(file)} has not column {column}")
-            if column_query in list(subject_df[column]):
+            #if column_query in list(subject_df[column]):
+            if subject_df[column].str.startswith(column_query).any():
                 if subject not in subjects_with_resp.keys(): 
                     subjects_with_resp[subject] = []
                 subjects_with_resp[subject].append(
@@ -55,7 +56,7 @@ def find_subjects_with_electrodes_bids(
 if __name__ == "__main__": 
     bids_root = r"D:\DABI\StimulationDataset"
     print("The Following Subjects Have Respiratory Data")
-    for k, v in find_subjects_with_electrodes_bids(bids_root, "name", "RESP", "ses-postimp", "ieeg").items(): 
+    for k, v in find_subjects_with_electrodes_bids(bids_root, column = "name", column_query = "RESP").items(): 
         print(f"{k}: {v}")
     print("The Following Subjects Have ECG Data")
     for k, v in find_subjects_with_electrodes_bids(root = bids_root, column_query = "ECG", column = "type").items(): 
