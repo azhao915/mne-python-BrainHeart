@@ -193,11 +193,11 @@ if __name__ == "__main__":
     
     bids_root = r"D:/DABI/StimulationDataset"
     ext = "vhdr"
-    subject = "4r3o"
+    subject = "2h5u"
     sess = "postimp"
     datatype = "ieeg"
     suffix = "ieeg"
-    run = "01"
+    run = "03"
     extension = "vhdr"
     
     bids_paths = mne_bids.BIDSPath(root=bids_root, 
@@ -227,7 +227,7 @@ if __name__ == "__main__":
     brain.add_annotation("aparc", borders=False, alpha=0.2)
     
     info = raw.info
-    t1 = nb.load(r"D:\DABI\StimulationDataset\sub-4r3o\ses-preimp\anat\sub-4r3o_ses-preimp_acq-T1w_run-01_T1w.nii")
+    t1 = nb.load(rf"D:\DABI\StimulationDataset\sub-{subject}\ses-preimp\anat\sub-{subject}_ses-preimp_acq-T1w_run-01_T1w.nii")
     
     # Setup MRI picking and keep figure reference
     mri_fig, mri_axes = setup_mri_picking(brain, info, t1)

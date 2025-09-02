@@ -17,7 +17,10 @@ def compute_hrv_time_neurokit(
         tmin: int | float | None = 0.0,
         tmax: int | float | None = None, 
         min_segment_time: int | float | None = None,
-        verbose: bool = True
+        verbose: bool = True, 
+        time = True, 
+        frequency = True, 
+        nonlinear = True
 ): 
     sfreq = raw.info["sfreq"]
     peaks = _load_ecg_peaks(
@@ -35,37 +38,55 @@ def compute_hrv_time_neurokit(
     )
     valid_intervals = _onsets_ends_to_intervals(valid_onsets, valid_ends)
     annotation_periods = _sanitize_annotations_periods(annotation_periods)
-    output_dict = {}
-    for annotation_name, annotation_period in annotation_periods.items(): 
+    output_df = pd.DataFrame()
+    for annotation_period in annotation_periods.values(): 
         # Can technically combine this code with the previous _annotations_start_stop_improved, TO DO
         intervals_annotation_period = _onsets_ends_to_intervals(
-            _annotations_start_stop_improved(
-                raw, annotations_to_keep = annotation_period
+            *_annotations_start_stop_improved(
+                raw, annotations_to_keep = annotation_period, annotations_to_reject = None
             )
         )
+        print(intervals_annotation_period)
         intervals_annotation_period = _intervals_intersection(
             intervals_annotation_period, valid_intervals
         )
-        peaks_period = _peaks_from_intervals(
-            intervals = intervals_annotation_period, events = peaks
+        peaks_period_flattened = _peaks_from_intervals(
+            intervals = intervals_annotation_period, events = peaks, flattened = True
         )
         # For now, simply use the nk function, and let the function itself determine if the intervals are successive
-        out = nk.hrv_time(peaks_period, sampling_rate = sfreq).to_dict()
-        output_dict[annotation_name] = out
-    return pd.DataFrame.from_dict(
-        output_dict, orient = "index"
-    )
+        measures = []
+        if time: 
+            measures.append(
+                nk.hrv_time(peaks_period_flattened, sampling_rate = sfreq)
+            )
+        if frequency: 
+            measures.append(
+                nk.hrv_frequency(peaks_period_flattened, sampling_rate = sfreq)
+            )
+        if nonlinear: 
+            measures.append(
+                nk.hrv_nonlinear(peaks_period_flattened, sampling_rate = sfreq)
+            )
+        row = pd.concat(measures, axis = 1)
+        output_df = pd.concat([output_df, row], axis = 0)
+    period_names = list(annotation_periods.keys())
+    if not (len(period_names) == 1 and not period_names[0]): #Didn't return simply [""] as keys, indicating that no name was given
+        output_df = pd.concat([output_df, pd.Series(period_names, name = "period_names")], axis = 1)
+        output_df = output_df.set_index("period_names")
+    return output_df
 
 def _sanitize_annotations_periods(annotation_periods: str | list[str | list[str]] | dict[str: list[str] | str] | None) -> dict[str: list[str]]:
     empty_row_name = ""
     if annotation_periods is None: 
-        return {"": None}
+        return {empty_row_name: None}
     elif isinstance(annotation_periods, str): 
         return {annotation_periods: [annotation_periods]}
     elif isinstance(annotation_periods, list): 
         return {str(annotation_period): ([annotation_period] if isinstance(annotation_period, str) else annotation_period) for annotation_period in annotation_periods}
     elif isinstance(annotation_periods, dict): 
         return {annotation_name: ([annotation_period] if isinstance(annotation_period, str) else annotation_period) for annotation_name, annotation_period in annotation_periods.items()}
+    else: 
+        raise TypeError("Unrecognized Data Type for annotations_periods")
 
 
 if __name__ == "__main__": 
@@ -96,5 +117,7 @@ if __name__ == "__main__":
     raw.load_data()
     #ecg_process_neurokit(raw)
     events, _, _ = find_ecg_events_neurokit(raw, keep_by_annotations = None)
-    _add_data_to_raw(raw, events[:, 0], "ecg_peaks")
+    peaks = np.zeros(raw.n_times)
+    peaks[events[:, 0]] = 1
+    _add_data_to_raw(raw, peaks, "ecg_peaks")
     print(compute_hrv_time_neurokit(raw, peaks_ch_name = "ecg_peaks"))

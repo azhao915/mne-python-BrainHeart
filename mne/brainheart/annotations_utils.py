@@ -329,8 +329,8 @@ def _intervals_subtraction_boolean(
 
 
 def _sanitize_intervals_list(intervals_list): 
-    if isinstance(intervals_list, tuple): 
-        intervals_list = intervals_list[0]
+    #if isinstance(intervals_list, tuple): 
+    #    intervals_list = intervals_list[0]
     return [intervals for intervals in intervals_list if len(intervals)]
 
 

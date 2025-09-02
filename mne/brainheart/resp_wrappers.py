@@ -156,8 +156,32 @@ if __name__ == "__main__":
     
     #This dataset doesn't have the RESP data under the type RESP
     pick = "RESP"
-    resp = resp_from_ecg_neurokit(raw, annotations_to_keep = None)
-    import matplotlib.pyplot as plt
-    plt.plot(resp.flatten())
-    plt.show()
+    resp = resp_from_ecg_neurokit(raw, annotations_to_keep = None, resp_name = "resp")
+    '''
+    seeg_chans = mne.pick_types(raw.info, seeg = True)
+    resp_chan = mne.pick_types(raw.info, resp = True)
+    indices = (np.array(seeg_chans), np.ones(len(seeg_chans), dtype = int)*resp_chan)
 
+
+    epochs = mne.make_fixed_length_epochs(raw)
+    from mne_connectivity import spectral_connectivity_epochs
+    coherence = spectral_connectivity_epochs(
+        epochs, 
+        method = "coh", 
+        mode = "multitaper", 
+        indices = indices, 
+        sfreq = epochs.info["sfreq"], 
+        fmin = 1, 
+        fmax = 50, 
+        faverage = False, 
+        n_jobs = -1
+    )
+    print(coherence)
+    data = coherence.get_data()
+    freqs = coherence.freqs
+    import matplotlib.pyplot as plt
+    for i in range(data.shape[0]):
+        print(raw.info["ch_names"][i]) 
+        plt.plot(freqs, data.T)
+    plt.show()
+    '''

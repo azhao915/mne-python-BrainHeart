@@ -3,6 +3,8 @@ from mne import create_info
 import numpy as np
 from pandas import Series
 
+import itertools
+
 from annotations_utils import _onsets_ends_to_intervals
 
 def _inter_peaks_from_windows(
@@ -23,7 +25,7 @@ def _format_peaks(
     return peaks
 
 
-def _peaks_from_intervals(intervals, events, event_id: int | None = None):
+def _peaks_from_intervals(intervals, events, event_id: int | None = None, flattened: bool = False) -> list[int] | list[list[int]]:
     if not len(intervals): 
         return [[]]
     if isinstance(events, list): 
@@ -36,6 +38,8 @@ def _peaks_from_intervals(intervals, events, event_id: int | None = None):
     for i, (onset, end) in enumerate(intervals): 
         peaks_mask = (onset <= all_peaks) & (all_peaks <= end)
         peaks[i] = all_peaks[peaks_mask]
+    if flattened: 
+        peaks = list(itertools.chain.from_iterable(peaks))
     return peaks
 
 
