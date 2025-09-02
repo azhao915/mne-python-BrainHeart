@@ -26,7 +26,6 @@ def _annotations_start_stop_improved(
     Returns:
         tuple[np.ndarray, np.ndarray]: _description_
     """
-    #This follows from _annotations_starts_stops_time_restriction, which might be deprecated
 
     ###################
     # TO DO: Better implementation by mapping the intervals to boolean masks corresponding to intervals built from the all the possible onsets and ends, and then do

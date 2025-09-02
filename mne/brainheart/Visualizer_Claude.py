@@ -20,6 +20,7 @@ def setup_mri_picking(
         click_pos = np.array(click_pos)/click_pos_adj
         min_distance = np.inf
         nearest_electrode = None
+        nearest_pos = None
         for ch in info["chs"]: 
             if ch["kind"] == 802: 
                 electrode_pos = ch["loc"][:3]
@@ -27,12 +28,13 @@ def setup_mri_picking(
                 if distance < min_distance: 
                     min_distance = distance
                     nearest_electrode = ch["ch_name"]
-        return nearest_electrode
+                    nearest_pos = electrode_pos
+        return nearest_electrode, np.array(nearest_pos) * click_pos_adj
 
     def click_callback(point): 
         print(f"Clicked at 3D position: {point}")
-        electrode_name = find_nearest_electrode(point)
-        update_mri_plot(point)
+        electrode_name, nearest_pos = find_nearest_electrode(point)
+        update_mri_plot(nearest_pos, electrode_name)
         if electrode_name is not None: 
             print(f"Nearest Electrode: {electrode_name}")
         else: 
@@ -88,8 +90,7 @@ def setup_mri_picking(
         
         return fig, axes, vmin, vmax
 
-    def update_mri_plot(point): 
-        print("Updating MRI")
+    def update_mri_plot(point, electrode_name = None): 
         coords = list(point)
         coords_anat = np.array((coords + [1]))
         coords_vox = affine_inv @ coords_anat
@@ -101,6 +102,7 @@ def setup_mri_picking(
         coords_vox_indices[2] = np.clip(coords_vox_indices[2], 0, data.shape[2]-1)
 
         cmap = "grey"
+        subtext = " " + electrode_name if electrode_name is not None else "" 
 
         # Clear previous images
         for ax in axes:
@@ -111,7 +113,7 @@ def setup_mri_picking(
         im0 = axes[0].imshow(coronal_slice, cmap=cmap, vmin=vmin, vmax=vmax)
         axes[0].axhline(coords_vox_indices[1], color="red", linewidth=2)
         axes[0].axvline(data.shape[0]-coords_vox_indices[0], color="red", linewidth=2)
-        axes[0].set_title('Coronal', color='white')
+        axes[0].set_title('Coronal' + subtext, color='white')
         axes[0].text(0.05, 0.95, 'L', transform=axes[0].transAxes, 
                     color='white', fontsize=14, fontweight='bold', 
                     verticalalignment='top', horizontalalignment='left')
@@ -127,7 +129,7 @@ def setup_mri_picking(
         im1 = axes[1].imshow(sagittal_slice, cmap=cmap, vmin=vmin, vmax=vmax)
         axes[1].axhline(coords_vox_indices[1], color="red", linewidth=2)
         axes[1].axvline(coords_vox_indices[2], color="red", linewidth=2)
-        axes[1].set_title('Sagittal', color='white')
+        axes[1].set_title('Sagittal' + subtext, color='white')
         axes[1].text(0.05, 0.05, f"x = {coords_vox_indices[0]}", transform=axes[1].transAxes, 
                     color='white', fontsize=12, fontweight='bold', 
                     verticalalignment='bottom', horizontalalignment='left')
@@ -137,7 +139,7 @@ def setup_mri_picking(
         im2 = axes[2].imshow(horizontal_slice, cmap=cmap, vmin=vmin, vmax=vmax)
         axes[2].axhline(data.shape[2] - coords_vox_indices[2], color="red", linewidth=2)
         axes[2].axvline(data.shape[0] - coords_vox_indices[0], color="red", linewidth=2)
-        axes[2].set_title('Axial', color='white')
+        axes[2].set_title('Axial' + subtext, color='white')
         axes[2].text(0.05, 0.95, 'L', transform=axes[2].transAxes, 
                     color='white', fontsize=14, fontweight='bold', 
                     verticalalignment='top', horizontalalignment='left')
@@ -158,7 +160,7 @@ def setup_mri_picking(
             fig._colorbar.remove()
         fig._colorbar = fig.colorbar(im1, ax=axes, shrink=0.8, aspect=20, pad=0.02)
         fig._colorbar.ax.tick_params(colors='white')
-        
+
         # Update the display
         plt.draw()
         plt.pause(0.01)  # Small pause to ensure update

@@ -24,11 +24,14 @@ def _format_peaks(
 
 
 def _peaks_from_intervals(intervals, events, event_id: int | None = None):
-    if event_id is not None:  
-        events = events[events[:, 2] == event_id]
     if not len(intervals): 
         return [[]]
-    all_peaks = events[:, 0]
+    if isinstance(events, list): 
+        all_peaks = np.array(events)
+    else: 
+        if event_id is not None:  
+            events = events[events[:, 2] == event_id]
+        all_peaks = events[:, 0]
     peaks = [[]]*len(intervals)
     for i, (onset, end) in enumerate(intervals): 
         peaks_mask = (onset <= all_peaks) & (all_peaks <= end)

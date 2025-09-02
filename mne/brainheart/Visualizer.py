@@ -6,9 +6,14 @@ import matplotlib.pyplot as plt
 def setup_simple_electrode_picking(
         brain, 
         info, 
-        min_distance: float = 1, 
-        click_pos_adj: int = 1000): 
+        min_distance: float = 1): 
     
+    if brain.units == "mm": 
+        click_pos_adj = 1000
+    elif brain.units == "m": 
+        click_pos_adj = 1
+    else: 
+        raise Warning("Unknown Units for Brain Coords")
 
     def find_nearest_electrode(click_pos): 
         click_pos = np.array(click_pos)/click_pos_adj
@@ -40,7 +45,6 @@ def setup_simple_electrode_picking(
             if ch["kind"] == 802: 
                 electrode_positions.append(np.array(ch["loc"][:3]*click_pos_adj))
                 electrode_names.append(ch["ch_name"])
-
         if electrode_positions: 
             plotter.add_point_labels(
                 points = electrode_positions, 
@@ -66,6 +70,16 @@ def setup_mri_picking(
         t1, 
         min_distance: float = 1, 
         click_pos_adj: int = 1000): 
+    
+    electrode_data = []
+    for ch in info["chs"]: 
+        if ch["kind"] == 802: 
+            electrode_data.append({
+                "name": ch["ch_name"], 
+                "position" : np.array(ch["loc"][:3]), 
+                "scaled_position": np.array(ch["loc"][:3]) * click_pos_adj, 
+                "info": ch
+            })
     
 
     def find_nearest_electrode(click_pos): 
@@ -139,7 +153,7 @@ def setup_mri_picking(
         return fig, axes, vmin, vmax
 
 
-    def update_mri_plot(point): 
+    def update_mri_plot(point, electrode_name = None): 
         print(f"Updating MRI, point = {point}")
         # TO DO: Need to convert make sure the position is correct
         coords = list(point)
@@ -154,6 +168,13 @@ def setup_mri_picking(
 
         for ax in axes:
             ax.clear()
+
+        if electrode_name: 
+            title_color = "red"
+            title_suffix = f" - {electrode_name}"
+        else: 
+            title_color = "white"
+            title_suffix = f" - No electrode selected"
 
         coronal_slice = data[::-1, :, coords_vox_indices[2]].T
         sagittal_slice = data[coords_vox_indices[0], :, :]
@@ -178,6 +199,7 @@ def setup_mri_picking(
         axes[1].text(0.05, 0.05, f"x = {coords_vox_indices[0]}", transform=axes[1].transAxes, 
                     color='white', fontsize=14, fontweight='bold', 
                     verticalalignment='top', horizontalalignment='left')
+        axes[1].set_title(f"Sagittal {title_suffix}", color_title = title_color)
 
         axes[2].imshow(horizontal_slice, cmap = cmap, vmin = vmin, vmax = vmax)
         axes[2].axhline(data.shape[2] - coords_vox_indices[2], color = "white")

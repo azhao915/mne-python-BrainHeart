@@ -9,7 +9,7 @@ from mne.utils import logger, verbose
 
 from functools import partial
 
-from mne.brainheart.annotations_utils import _annotations_start_stop_improved, _onsets_ends_to_intervals, _intervals_to_onsets_ends
+from mne.brainheart.annotations_utils import _annotations_start_stop_improved, _onsets_ends_to_intervals, _intervals_to_onsets_ends, _intervals_intersection
 from utils import _intervals_from_mask, _write_events_dict_to_stim, _peaks_from_intervals, _format_peaks, _mask_from_intervals, _add_data_to_raw
 from event_detection import find_events, sliding_window_accept_reject
 
@@ -76,10 +76,14 @@ def ecg_quality_reject(
     ecg_quality = load_ecg_quality(raw, quality, quality_ch_name)
     quality_mask = (quality_thresh <= ecg_quality)
     if min_hr is not None and max_hr is not None:
-        min_hr = 0 if min_hr is None else min_hr
-        max_hr = np.inf if max_hr is None else max_hr
-        hr = _load_hr(raw, hr, events, event_id, "ECG_Rate")
-        hr_mask = (min_hr <= ecg_quality) & (ecg_quality <= max_hr)
+        hr_mask = _hr_mask(
+            raw = raw, 
+            hr = hr, 
+            events = events, 
+            event_id = event_id, 
+            min_hr = min_hr, 
+            max_hr = max_hr 
+        )
         quality_mask = quality_mask & hr_mask
     intervals_quality = _intervals_from_mask(quality_mask)
     onset_quality, ends_quality = _intervals_to_onsets_ends(intervals_quality)
@@ -284,7 +288,7 @@ def ecg_fixpeaks_neurokit(
     sfreq = raw.info["sfreq"]
     events = _load_ecg_peaks(
         raw = raw,
-        ch_name = ch_name, 
+        ch_name = ecg_peaks_ch_name, 
         events = events, 
         event_id = event_id
     )
@@ -463,8 +467,117 @@ def _load_ecg_peaks(raw: mne.io.BaseRaw | None = None, ch_name: str | None = "ec
     return events
 
 
-if __name__ == "__main__": 
+def _hr_annotations(
+        raw: mne.io.BaseRaw, 
+        annotation_name: str | None = None,
+        hr: np.ndarray | None = None, 
+        events: np.ndarray | None = None, 
+        event_id: int | None = None, 
+        min_hr: int | float | None = None, 
+        max_hr: int | float | None = None, 
+        tmin: int | float | None = 0.0, 
+        tmax: int | float | None = None,
+        min_segment_time: int | float | None = None,
+        annotations_to_keep: str | list[str] | None = ["ecg_valid", "ecg_acceptable"], #Don't know if this is the best way to handle this
+        annotations_to_reject: str | list[str] | None = ["bad, edge"],
+): 
+    sfreq = raw.info["sfreq"]
+    hr_mask = _hr_mask(
+        raw = raw, 
+        hr = hr, 
+        events = events, 
+        event_id = event_id, 
+        min_hr = min_hr, 
+        max_hr = max_hr 
+    )
+    hr_intervals = _intervals_from_mask(hr_mask)
+    onsets, ends = _annotations_start_stop_improved(
+        raw = raw, 
+        annotations_to_keep = annotations_to_keep, 
+        annotations_to_reject = annotations_to_reject, 
+        tmin = tmin,
+        tmax = tmax, 
+        min_segment_time = min_segment_time
+    )
+    intervals_annotations = _onsets_ends_to_intervals(onsets, ends)
+    intervals_combined = _intervals_intersection(hr_intervals, intervals_annotations)
+    onsets_combined, ends_combined = _intervals_to_onsets_ends(intervals_combined)
+    if annotation_name is not None:
+        hr_annotations = mne.Annotations(
+            onset = onsets_combined/sfreq,
+            duration = (ends_combined - onsets_combined)/sfreq,
+            description = annotation_name, 
+        )   
+        raw.set_annotations(raw.annotations + hr_annotations)
+    return onsets_combined, ends_combined
 
+
+def _hr_mask(
+        raw: mne.io.BaseRaw, 
+        hr: np.ndarray | None = None, 
+        events: np.ndarray | None = None, 
+        event_id: int | None = None, 
+        min_hr: int | float | None = None, 
+        max_hr: int | float | None = None
+): 
+    min_hr = 0 if min_hr is None else min_hr
+    max_hr = np.inf if max_hr is None else max_hr
+    hr = _load_hr(raw, hr, events, event_id, "ECG_Rate")
+    hr_mask = (min_hr <= hr) & (hr <= max_hr)
+    return hr_mask
+
+def annotate_tachycardia(
+        raw: mne.io.BaseRaw, 
+        hr: np.ndarray | None = None, 
+        events: np.ndarray | None = None, 
+        event_id: int | None = None, 
+        tmin: int | float | None = 0.0, 
+        tmax: int | float | None = None,
+        min_segment_time: int | float | None = None,
+        annotations_to_keep: str | list[str] | None = ["ecg_valid", "ecg_acceptable"], #Don't know if this is the best way to handle this
+        annotations_to_reject: str | list[str] | None = ["bad, edge"],
+): 
+    return _hr_annotations(
+        raw = raw, 
+        annotation_name = "tachycardia", 
+        hr = hr, 
+        events = events, 
+        event_id = event_id, 
+        min_hr = 100, 
+        tmin = tmin, 
+        tmax = tmax, 
+        min_segment_time = min_segment_time,
+        annotations_to_keep = annotations_to_keep, 
+        annotations_to_reject = annotations_to_reject, 
+    )    
+
+def annotate_bradycardia(
+        raw: mne.io.BaseRaw, 
+        hr: np.ndarray | None = None, 
+        events: np.ndarray | None = None, 
+        event_id: int | None = None, 
+        tmin: int | float | None = 0.0, 
+        tmax: int | float | None = None,
+        min_segment_time: int | float | None = None,
+        annotations_to_keep: str | list[str] | None = ["ecg_valid", "ecg_acceptable"], #Don't know if this is the best way to handle this
+        annotations_to_reject: str | list[str] | None = ["bad, edge"],
+): 
+    return _hr_annotations(
+        raw = raw, 
+        annotation_name = "tachycardia", 
+        hr = hr, 
+        events = events, 
+        event_id = event_id, 
+        max = 60, 
+        tmin = tmin, 
+        tmax = tmax, 
+        min_segment_time = min_segment_time,
+        annotations_to_keep = annotations_to_keep, 
+        annotations_to_reject = annotations_to_reject, 
+    )    
+
+
+if __name__ == "__main__": 
     import mne_bids
     import mne
     bids_root = r"D:/DABI/StimulationDataset"
