@@ -9,16 +9,17 @@ from utils import _write_events_dict_to_stim, _add_data_to_raw
 from ecg_wrappers import _select_single_ecg_channel, _load_hr
 from annotations_utils import _annotations_start_stop_improved, _onsets_ends_to_intervals
 
+
 def resp_process_neurokit(
         raw: mne.io.BaseRaw, 
         resp_ch_name: str | None = None,
         **kwargs
 ): 
-    _, ecg_data = _select_single_resp_channel(raw, resp_ch_name, return_data = True)
-    resp_dict, resp_event_indices = nk.rsp_process(ecg_data, sampling_rate = raw.info["sfreq"], **kwargs)
+    _, rsp_data = _select_single_resp_channel(raw, resp_ch_name, return_data = True)
+    resp_dict, resp_event_indices = nk.rsp_process(rsp_data, sampling_rate = raw.info["sfreq"], **kwargs)
     ch_types = neurokit_ch_names_to_types(resp_dict.columns)
     _write_events_dict_to_stim(resp_dict, raw, ch_types = ch_types)
-    return raw, resp_event_indices
+    return raw, resp_event_indices, resp_dict
 
 
 def _select_single_resp_channel(raw, ch_name: str = None, return_data = False): 
@@ -131,57 +132,7 @@ def resp_from_ecg_neurokit(
 
 if __name__ == "__main__": 
 
-    import mne_bids
-    import mne
-    bids_root = r"D:/DABI/StimulationDataset"
-    ext = "vhdr" #extension for the recording
-    subject = "2h5u"
-    sess = "postimp"
-    datatype = "ieeg"
-    suffix = "ieeg"
-    run = "03"
-    extension = "vhdr"
-    bids_paths = mne_bids.BIDSPath(root = bids_root, 
-                                session = sess, 
-                                subject = subject, 
-                                datatype=datatype, 
-                                suffix = suffix,
-                                run = run, 
-                                extension= extension
-                                )
-    bids_path = bids_paths.match()[0]
-    #Load
-    raw = mne_bids.read_raw_bids(bids_path)
-    raw.load_data()
-    
-    #This dataset doesn't have the RESP data under the type RESP
-    pick = "RESP"
-    resp = resp_from_ecg_neurokit(raw, annotations_to_keep = None, resp_name = "resp")
-    '''
-    seeg_chans = mne.pick_types(raw.info, seeg = True)
-    resp_chan = mne.pick_types(raw.info, resp = True)
-    indices = (np.array(seeg_chans), np.ones(len(seeg_chans), dtype = int)*resp_chan)
+    from brainheart.rsp_test import simulate_dummy_raw_with_rsp
+    rsp_raw_array = simulate_dummy_raw_with_rsp(100)
+    print(resp_process_neurokit(rsp_raw_array))
 
-
-    epochs = mne.make_fixed_length_epochs(raw)
-    from mne_connectivity import spectral_connectivity_epochs
-    coherence = spectral_connectivity_epochs(
-        epochs, 
-        method = "coh", 
-        mode = "multitaper", 
-        indices = indices, 
-        sfreq = epochs.info["sfreq"], 
-        fmin = 1, 
-        fmax = 50, 
-        faverage = False, 
-        n_jobs = -1
-    )
-    print(coherence)
-    data = coherence.get_data()
-    freqs = coherence.freqs
-    import matplotlib.pyplot as plt
-    for i in range(data.shape[0]):
-        print(raw.info["ch_names"][i]) 
-        plt.plot(freqs, data.T)
-    plt.show()
-    '''

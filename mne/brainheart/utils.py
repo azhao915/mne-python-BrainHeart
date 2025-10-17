@@ -5,7 +5,7 @@ from pandas import Series
 
 import itertools
 
-from annotations_utils import _onsets_ends_to_intervals
+from mne.brainheart.annotations_utils import _onsets_ends_to_intervals
 
 def _inter_peaks_from_windows(
         peaks: list[list[int]] | list[int],

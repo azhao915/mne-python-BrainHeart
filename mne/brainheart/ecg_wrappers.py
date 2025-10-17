@@ -10,18 +10,10 @@ from mne.utils import logger, verbose
 from functools import partial
 
 from mne.brainheart.annotations_utils import _annotations_start_stop_improved, _onsets_ends_to_intervals, _intervals_to_onsets_ends, _intervals_intersection
-from utils import _intervals_from_mask, _write_events_dict_to_stim, _peaks_from_intervals, _format_peaks, _mask_from_intervals, _add_data_to_raw
-from event_detection import find_events, sliding_window_accept_reject
+from mne.brainheart.utils import _intervals_from_mask, _write_events_dict_to_stim, _peaks_from_intervals, _format_peaks, _mask_from_intervals, _add_data_to_raw
+from mne.brainheart.event_detection import find_events, sliding_window_accept_reject
 
-def modify_parameters_wrapper(new_params): 
-    """_summary_
-
-    Args:
-        new_params (_type_): _description_
-    """
-    def decorator(): 
-        pass
-    pass
+from mne.brainheart.ecg_channel_names_enum import ECG_Channels
 
 
 def ecg_process_neurokit(
@@ -30,9 +22,12 @@ def ecg_process_neurokit(
         **kwargs
 ): 
     _, ecg_data = _select_single_ecg_channel(raw, ecg_ch_name, return_data = True)
-    ecg_dict, ecg_event_indices = nk.ecg_process(ecg_data, sampling_rate = raw.info["sfreq"], **kwargs)
-    ch_types = neurokit_ch_names_to_types(ecg_dict.columns)
-    _write_events_dict_to_stim(ecg_dict, raw, ch_types = ch_types)
+    ecg_df, ecg_event_indices = nk.ecg_process(ecg_data, sampling_rate = raw.info["sfreq"], **kwargs)
+
+    # Now convert the ecg_event_indices to a dict for the relevant measures
+    ecg_df = pd.concat([ecg_df, _ecg_event_indices_from_preprocess_to_dict(ecg_event_indices, raw.n_times)], axis = 1)
+    ch_types = neurokit_ch_names_to_types(ecg_df.columns)
+    _write_events_dict_to_stim(ecg_df, raw, ch_types = ch_types)
     return raw, ecg_event_indices
 
 
@@ -52,11 +47,27 @@ def _neurokit_name_to_type(
         name: str
 ): 
     name = name.lower()
-    if "raw" in name or "clean" in name: 
-        return "ecg"
-    if "rate" in name: 
-        return "ecg" # Will need to modify this at some point
-    return "stim"
+    if "peaks" in name or "fixpeaks" in name: 
+        return "stim"
+    return "ecg"
+
+
+def _ecg_event_indices_from_preprocess_to_dict(
+        ecg_event_indices,
+        n_times, 
+        keys_to_columns = ["ECG_R_Peaks", 
+                           "ECG_fixpeaks_ectopic", 
+                           "ECG_fixpeaks_extra", 
+                           "ECG_fixpeaks_longshort"], 
+        column_names = [ECG_Channels.ECG_R_Peaks_Corrected.value, 
+                        ECG_Channels.ECG_fixpeaks_ectopic.value, 
+                        ECG_Channels.ECG_fixpeaks_extra.value, 
+                        ECG_Channels.ECG_fixpeaks_longshort.value]) -> pd.DataFrame: 
+    events_all = np.zeros((n_times, len(column_names)), dtype = int)
+    for i, key in enumerate(keys_to_columns):
+        events_all[ecg_event_indices[key], i] = 1
+    return pd.DataFrame(data = events_all, columns=column_names)
+
 
 
 def ecg_quality_reject(
@@ -64,9 +75,9 @@ def ecg_quality_reject(
         events: np.ndarray | None = None,
         event_id: int | None = None,
         quality_thresh: float = 0.8,
-        annotate_quality_name: str = "ecg_quality",
+        annotate_quality_name: str = "ECG_Quality",
         quality: np.ndarray | None = None, 
-        quality_ch_name: str | None = "ECG_Quality", 
+        quality_ch_name: str | None = ECG_Channels.ECG_Quality.value, 
         min_hr: int | float | None = 40,
         max_hr: int | float | None = 200, 
         hr: np.ndarray | None = None
@@ -109,7 +120,6 @@ def _load_hr(
         ecg_ch_name: str | None = None,
         hr_ch_name: str | None = None
 ): 
-    # Need to implement once added hr to the types
     if hr is None: 
         if hr_ch_name in raw.ch_names and hr_ch_name is not None:
             hr = raw.get_data(picks = hr_ch_name, return_times = False)
@@ -416,19 +426,21 @@ def ecg_phase_neurokit2(
     intervals = _onsets_ends_to_intervals(onsets, ends)
     peaks = _peaks_from_intervals(intervals, events)
     peaks = _format_peaks(peaks)
-    ecg_phase = np.zeros((1, raw.n_times), dtype = float)
+    ecg_phase_atrial = np.zeros((1, raw.n_times), dtype = float)
+    ecg_phase_ventricular = np.zeros((1, raw.n_times), dtype = float)
     for peak_win, (onset, end) in zip(peaks, intervals): 
         if len(peak_win) >= min_N_peaks: 
             #Then the window has enough peaks
             win_N = end - onset
             peak_win = peak_win - onset #Align with the window
-            rate_win = nk.ecg_phase(peak_win, sfreq, desired_length=win_N, interpolation_method = interpolation_method)
-            ecg_phase[0, onset:end] = rate_win    
+            ecg_phase_dict = nk.ecg_phase(peak_win, sfreq, desired_length=win_N, interpolation_method = interpolation_method)
+            ecg_phase_atrial[0, onset:end] = ecg_phase_dict["ECG_Phase_Atrial"] + 1
+            ecg_phase_ventricular[0, onset:end] = ecg_phase_dict["ECG_Phase_Atrial"] + 1 # We are adding one, as we are starting with zeros, so zeros must represent invalid periods
 
-    ########## NEED TO REWORK ON THIS
+    return ecg_phase_atrial, ecg_phase_ventricular
     
 
-def _select_single_ecg_channel(raw, ch_name: str = None, return_data = False): 
+def _select_single_ecg_channel(raw, ch_name: str | None = None, return_data = False): 
     idx_ecg = _get_ecg_channel_index(ch_name, raw)
     if idx_ecg is not None:
         logger.info(f"Using channel {raw.ch_names[idx_ecg]} to identify heart beats.")
@@ -444,11 +456,11 @@ def _select_single_ecg_channel(raw, ch_name: str = None, return_data = False):
     return idx_ecg
 
 
-def _load_ecg_peaks(raw: mne.io.BaseRaw | None = None, ch_name: str | None = "ecg_peaks", events: np.ndarray | None = None, event_id: int | list[str] | None = None): 
+def _load_ecg_peaks(raw: mne.io.BaseRaw | None = None, ch_name: str | None = None, events: np.ndarray | None = None, event_id: int | list[str] | None = None): 
     #Load it from raw
     if events is None: 
         if ch_name is None: 
-            ch_name = "ecg_peaks"
+            ch_name = ECG_Channels.ECG_R_Peaks.value
         try: 
             events = mne.find_events(raw, stim_channel = ch_name)
             # TO DO: Replace mne.find_events with find_ecg_peaks once the project is more underway
@@ -564,11 +576,11 @@ def annotate_bradycardia(
 ): 
     return _hr_annotations(
         raw = raw, 
-        annotation_name = "tachycardia", 
+        annotation_name = "bradycardia", 
         hr = hr, 
         events = events, 
         event_id = event_id, 
-        max = 60, 
+        max_hr = 60, 
         tmin = tmin, 
         tmax = tmax, 
         min_segment_time = min_segment_time,
@@ -604,6 +616,7 @@ if __name__ == "__main__":
     events, _, _ = find_ecg_events_neurokit(raw, keep_by_annotations = None)
     print(ecg_quality_sliding_window_zhao2018_neurokit(raw, valid_ecg_annotations = "ecg_valid"))
     print(hr_neurokit2(raw, events))
+    quality = peak_quality_mean_template_neurokit(raw)
     '''
     print(_write_events_to_stim(events, raw, "ecg_peaks"))
     rate = hr_neurokit2(raw, events = events, annotations_to_keep="ecg_acceptable")

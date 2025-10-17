@@ -46,7 +46,6 @@ def compute_hrv_time_neurokit(
                 raw, annotations_to_keep = annotation_period, annotations_to_reject = None
             )
         )
-        print(intervals_annotation_period)
         intervals_annotation_period = _intervals_intersection(
             intervals_annotation_period, valid_intervals
         )

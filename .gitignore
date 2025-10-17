@@ -104,3 +104,5 @@ venv/
 .ipynb_checkpoints/
 TESTS/OriginalHEPAnalysis.ipynb
 mne/brainheart/test.ipynb
+mne/brainheart/coherence_test.ipynb
+mne/brainheart/testing/test.ipynb

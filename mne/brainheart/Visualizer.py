@@ -3,6 +3,11 @@ import mne
 
 import matplotlib.pyplot as plt
 
+mne.viz.set_3d_backend('pyvista')
+import matplotlib
+matplotlib.use("Qt5Agg")
+plt.ion()
+
 def setup_simple_electrode_picking(
         brain, 
         info, 
@@ -67,43 +72,50 @@ def setup_simple_electrode_picking(
 def setup_mri_picking(
         brain, 
         info, 
-        t1, 
-        min_distance: float = 1, 
-        click_pos_adj: int = 1000): 
+        t1): 
     
-    electrode_data = []
-    for ch in info["chs"]: 
-        if ch["kind"] == 802: 
-            electrode_data.append({
-                "name": ch["ch_name"], 
-                "position" : np.array(ch["loc"][:3]), 
-                "scaled_position": np.array(ch["loc"][:3]) * click_pos_adj, 
-                "info": ch
-            })
+    if not brain._surf == "pial": 
+        raise ValueError("Enter the Pial Data")
     
-
+    if brain._units == "mm": 
+        click_pos_adj = 1000
+    elif brain._units == "m": 
+        click_pos_adj = 1
+    else: 
+        raise Warning("Unknown Units for Brain Coords")
+    
     def find_nearest_electrode(click_pos): 
         click_pos = np.array(click_pos)/click_pos_adj
         min_distance = np.inf
         nearest_electrode = None
+        nearest_pos = None
         for ch in info["chs"]: 
             if ch["kind"] == 802: 
-                electrode_post = ch["loc"][:3]
-                distance = np.linalg.norm(click_pos - np.array(electrode_post))
+                electrode_pos = ch["loc"][:3]
+                distance = np.linalg.norm(click_pos - np.array(electrode_pos))
                 if distance < min_distance: 
                     min_distance = distance
                     nearest_electrode = ch["ch_name"]
-        return nearest_electrode
-
+                    nearest_pos = electrode_pos
+        return nearest_electrode, np.array(nearest_pos)*click_pos_adj
+    
 
     def click_callback(point): 
         print(f"Clicked at 3D position: {point}")
-        electrode_name = find_nearest_electrode(point)
-        update_mri_plot(point)
+        electrode_name, nearest_pos = find_nearest_electrode(point)
+        update_mri_plot(nearest_pos, electrode_name)
         if electrode_name is not None: 
             print(f"Nearest Electrode: {electrode_name}")
         else: 
             print(f"No electrode nearby")
+
+
+    def reset_selection():
+        pass
+
+    
+    def set_electrode_color(): 
+        pass
 
 
     def add_name_labels(info, plotter):
@@ -199,7 +211,7 @@ def setup_mri_picking(
         axes[1].text(0.05, 0.05, f"x = {coords_vox_indices[0]}", transform=axes[1].transAxes, 
                     color='white', fontsize=14, fontweight='bold', 
                     verticalalignment='top', horizontalalignment='left')
-        axes[1].set_title(f"Sagittal {title_suffix}", color_title = title_color)
+        axes[1].set_title(f"Sagittal {title_suffix}", color = title_color)
 
         axes[2].imshow(horizontal_slice, cmap = cmap, vmin = vmin, vmax = vmax)
         axes[2].axhline(data.shape[2] - coords_vox_indices[2], color = "white")
@@ -225,6 +237,15 @@ def setup_mri_picking(
         
         plt.draw()
         plt.pause(0.01)
+    
+    '''
+    if isinstance(t1, nb.nifti1.Nifti1Image): 
+        data = t1.get_fdata()
+    elif isinstance(t1, np.ndarray): 
+        data = t1
+    else: 
+        raise TypeError("Unrecognized Type for t1")
+    '''
 
     data = t1.get_fdata()
 
@@ -249,11 +270,11 @@ if __name__ == "__main__":
     import nibabel as nb
     bids_root = r"D:/DABI/StimulationDataset"
     ext = "vhdr" #extension for the recording
-    subject = "4r3o" #sample
+    subject = "2h5u" #sample
     sess = "postimp"
     datatype = "ieeg"
     suffix = "ieeg"
-    run = "01"
+    run = "03"
     extension = "vhdr"
     bids_paths = mne_bids.BIDSPath(root = bids_root, 
                                 session = sess, 
@@ -267,11 +288,6 @@ if __name__ == "__main__":
     #Load
     raw = mne_bids.read_raw_bids(bids_path)
 
-    mne.viz.set_3d_backend('pyvista')
-    import matplotlib
-    matplotlib.use("Qt5Agg")
-    plt.ion()
-
     brain = mne.viz.Brain(
         f"sub-{subject}",
         subjects_dir=r"D:\DABI\StimulationDataset\derivatives\freesurfer",
@@ -283,6 +299,7 @@ if __name__ == "__main__":
     info = raw.info
     t1 = nb.load(r"D:\DABI\StimulationDataset\sub-4r3o\ses-preimp\anat\sub-4r3o_ses-preimp_acq-T1w_run-01_T1w.nii")
     mri_fig, mri_axes = setup_mri_picking(brain, info, t1)
+    brain._renderer.plotter.enable_surface_point_picking(False)
     brain.show()
 
     print("Click on the brain to update MRI slices. Close the brain window to exit")

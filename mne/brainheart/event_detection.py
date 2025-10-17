@@ -4,7 +4,7 @@ from mne.utils import verbose
 import numpy as np
 from typing import Callable
 
-from annotations_utils import _annotations_start_stop_improved
+from mne.brainheart.annotations_utils import _annotations_start_stop_improved
 
 @verbose
 def find_events(
@@ -22,6 +22,25 @@ def find_events(
         verbose: bool = True, 
         **kwargs
 ) -> tuple[np.ndarray | None, int | None, float | None]:
+    """ Finds events in an MNE raw dataset, using the event_finder function
+
+    Args:
+        raw (mne.io.BaseRaw): Raw Dataset
+        pick (str | int | list[str] | list[int]): _description_
+        event_finder (Callable): _description_
+        event_id (int, optional): _description_. Defaults to 1.
+        tstart (float | int, optional): _description_. Defaults to 0.0.
+        tend (float | int, optional): _description_. Defaults to None.
+        min_segment_time (int | float | None, optional): _description_. Defaults to None.
+        clean (Callable | None, optional): _description_. Defaults to None.
+        keep_by_annotations (list[str] | str | None, optional): _description_. Defaults to None.
+        reject_by_annotations (list[str] | str | None, optional): _description_. Defaults to ["edge", "bad"].
+        annotate_valid_period (str | None, optional): _description_. Defaults to None.
+        verbose (bool, optional): _description_. Defaults to True.
+
+    Returns:
+        tuple[np.ndarray | None, int | None, float | None]: _description_
+    """
     #Added sfreq here, as needed for neurokit2.ecg_peaks
     sfreq = raw.info["sfreq"]
     onsets, ends = _annotations_start_stop_improved(
@@ -79,7 +98,7 @@ def find_events(
 def _average_rate_from_windows(
         peaks: list[list[int]] | list[int],
         sfreq: int
-) -> float:
+) -> float | None:
     if not len(peaks):
         return None
     if isinstance(peaks[0], int): 
