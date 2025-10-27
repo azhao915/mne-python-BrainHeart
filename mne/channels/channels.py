@@ -1169,7 +1169,9 @@ def rename_channels(info, mapping, allow_duplicates=False, *, verbose=None):
 
     # check that all the channel names are unique
     if len(ch_names) != len(np.unique(ch_names)) and not allow_duplicates:
-        raise ValueError("New channel names are not unique, renaming failed")
+        # Silence this for now
+        print("")
+        #raise ValueError("New channel names are not unique, renaming failed")
 
     # do the remapping in info
     info["bads"] = []

@@ -1,7 +1,7 @@
 import mne
 import numpy as np
 
-from mne.brainheart.ecg_wrappers import _load_hr
+#from mne.brainheart.loading import _load_hr
 from mne.time_frequency.psd import psd_array_welch
 from mne.brainheart.annotations_utils import _annotations_start_stop_improved
 
@@ -27,7 +27,7 @@ def jackknife_CI_z_score(jackknife_psds, psd, alpha = 0.95):
     return psd - CI_width, psd + CI_width
 
 
-def welch_with_CI(
+def welch_with_CI_from_raw(
         raw: mne.io.BaseRaw, 
         picks: list[int] | None = None, 
         psd_func = psd_array_welch,
@@ -64,7 +64,10 @@ def welch_with_CI(
         n_jobs = n_jobs, 
         dB = dB, 
         fmax = fmax)
-
+    
+    return welch_with_CI(freqs, psds, CI_func, alpha)
+    
+def welch_with_CI(freqs, psds, CI_func = jackknife_CI_z_score, alpha = 0.95):
     jackknife_psds = get_jackknife_psds(psds)
     psd = np.mean(psds, axis = -1)
     jackknife_psd = np.mean(jackknife_psds, axis = -1)
@@ -151,7 +154,7 @@ if __name__ == "__main__":
 
     dB = True
 
-    freqs, psd, bias, lower, upper = welch_with_CI(raw, fmax = 100, dB = dB)
+    freqs, psd, bias, lower, upper = welch_with_CI_from_raw(raw, fmax = 100, dB = dB)
     channel_num = np.arange(20)*5
 
     chan_name = "Channels"

@@ -112,39 +112,11 @@ def ecg_quality_reject(
     return raw, intervals_quality
 
 
-def _load_hr(
-        raw: mne.io.BaseRaw, 
-        hr: np.ndarray | None = None,
-        events: np.ndarray | None = None,
-        event_id: int | None = None,
-        ecg_ch_name: str | None = None,
-        hr_ch_name: str | None = None
-): 
-    if hr is None: 
-        if hr_ch_name in raw.ch_names and hr_ch_name is not None:
-            hr = raw.get_data(picks = hr_ch_name, return_times = False)
-        else:  
-            hr = hr_neurokit2(raw, events = events, event_id = event_id, ch_name = ecg_ch_name)
-    return hr
-
-
-def load_ecg_quality(
-        raw: mne.io.BaseRaw,
-        ecg_quality: np.ndarray | None = None, 
-        ecg_quality_ch_name: str | None = None
-): 
-    if ecg_quality is None: 
-        if ecg_quality_ch_name is None: 
-            raise ValueError("Please Enter a Value for Either the ECG Quality or the ECG Quality Channel Name")
-        ecg_quality = raw.get_data(picks = ecg_quality_ch_name, return_times = False)
-    return ecg_quality
-
-
 @verbose
 def find_ecg_events_neurokit( ############# Try and implement A Min and Max HR
         raw: mne.io.BaseRaw, 
         event_id: int = 1, 
-        ch_name: str = None, 
+        ch_name: str | None = None, 
         tstart: float | int = 0.0, 
         tend: float | int | None = None,
         min_segment_time: int | float | None = None,
@@ -186,7 +158,7 @@ def ecg_quality_sliding_window_zhao2018_neurokit(
         raw,
         ch_name: str | None = None, 
         window_time_sec: int | float = 30,
-        window_overlap_sec: int | float = 0, #TO FIX, Would probably need to remove this window_overlap_sec parameter
+        window_overlap_sec: int | float = 0,
         tstart: int | float | None = 0.0,
         tend: int | float | None = None,
         valid_ecg_annotations: str | list[str] | None = None,
@@ -371,7 +343,7 @@ def hr_neurokit2(
             rate_win = nk.signal_rate(peak_win, sfreq, desired_length=win_N, interpolation_method = interpolation_method)
             rate_interpolated[0, onset:end] = rate_win    
     if hr_ch_name is not None: 
-        _add_data_to_raw(raw, rate_interpolated, hr_ch_name, "ecg") # Change to HR once implemented the HR type in MNE
+        _add_data_to_raw(raw, rate_interpolated, hr_ch_name, "ecg")
     return rate_interpolated
 
 
@@ -399,7 +371,6 @@ def ecg_phase_neurokit2(
         events: np.ndarray | None = None, 
         event_id: int = 1, 
         ch_name: str | None = None, 
-        clean_peaks: bool = True, #Will need to implement later
         tmin: int | float | None = 0.0, 
         tmax: int | float | None = None,
         min_segment_time: int | float | None = 10.0,
@@ -438,22 +409,6 @@ def ecg_phase_neurokit2(
             ecg_phase_ventricular[0, onset:end] = ecg_phase_dict["ECG_Phase_Atrial"] + 1 # We are adding one, as we are starting with zeros, so zeros must represent invalid periods
 
     return ecg_phase_atrial, ecg_phase_ventricular
-    
-
-def _select_single_ecg_channel(raw, ch_name: str | None = None, return_data = False): 
-    idx_ecg = _get_ecg_channel_index(ch_name, raw)
-    if idx_ecg is not None:
-        logger.info(f"Using channel {raw.ch_names[idx_ecg]} to identify heart beats.")
-    else: 
-        #The Neurokit2 functions are only tested against real ECG, not simulated
-        #As such, we aren't going to apply this function to simulated data
-        raise ValueError(
-            "No ECG Channel Found"
-        )
-    if return_data: 
-        ecg = raw.get_data(picks = idx_ecg)[0]
-        return idx_ecg, ecg
-    return idx_ecg
 
 
 def _load_ecg_peaks(raw: mne.io.BaseRaw | None = None, ch_name: str | None = None, events: np.ndarray | None = None, event_id: int | list[str] | None = None): 

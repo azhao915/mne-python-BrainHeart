@@ -17,7 +17,7 @@ def load():
                                 run = run, 
                                 extension= extension
                                 )
-    bids_path = bids_paths.match()[0]
+    bids_path = bids_paths.match()[1]
     #Load
     raw = mne_bids.read_raw_bids(bids_path)
     raw.load_data()
