@@ -4,6 +4,24 @@ from mne.utils import logger, verbose, _validate_type
 from mne.annotations import _annotations_starts_stops, _sync_onset
 from mne.io import BaseRaw
 
+from mne import Annotations
+
+def write_to_annotations(raw, onsets, ends, desc) -> Annotations | None: 
+    if desc is None: 
+        return
+    if onsets is None: 
+        onsets = np.zeros(1)
+    if ends is None: 
+        ends = np.array([raw.n_times])
+    sfreq = raw.info["sfreq"]
+    annotations = Annotations(
+        onset = onsets/sfreq,
+        duration = (ends - onsets)/sfreq,
+        description = desc, 
+    )   
+    raw.set_annotations(raw.annotations + annotations)
+    return annotations
+
 
 @verbose
 def _annotations_start_stop_improved(
@@ -26,11 +44,7 @@ def _annotations_start_stop_improved(
     Returns:
         tuple[np.ndarray, np.ndarray]: _description_
     """
-
-    ###################
-    # TO DO: Better implementation by mapping the intervals to boolean masks corresponding to intervals built from the all the possible onsets and ends, and then do
-    # bitwise operations
-    ###################
+    
     Nstart = 0 if tmin is None else raw.time_as_index(tmin)
     Nend = raw.n_times if tmax is None else raw.time_as_index(tmax)
     N_seg_min = 1 if min_segment_time is None else int(min_segment_time*raw.info["sfreq"])
@@ -49,11 +63,6 @@ def _annotations_start_stop_improved(
     else:
         annotations_to_reject = _format_annotation_types(annotations_to_reject)
         onsets_to_reject, ends_to_reject = _onsets_ends_nonoverlapping_from_raw(raw, annotations_to_reject, Nstart=Nstart, Nend = Nend, verbose = verbose)
-
-    '''
-    logger.info(f"Found Onsets: {onsets}, Ends: {ends}")
-    logger.info(f"Now choosing annotations from [{tmin} to {"end" if tmax is None else tmax}] sec")
-    '''
 
     #This part uses non-boolean masks
     #return _interval_difference(onsets_to_keep, ends_to_keep, onsets_to_reject, ends_to_reject, N_seg_min)
@@ -83,8 +92,10 @@ def _annotations_starts_stops_time_restriction(
         name, 
         invert 
     )
+    '''
     logger.info(f"Found Onsets: {onsets}, Ends: {ends}")
     logger.info(f"Now choosing annotations from [{tmin} to {"end" if tmax is None else tmax}] sec")
+    '''
     Nstart = 0 if tmin is None else raw.time_as_index(tmin)
     Nend = raw.n_times if tmax is None else raw.time_as_index(tmax)
     return _onsets_ends_time_restriction(onsets, ends, Nstart, Nend, crop_annotations, verbose)
@@ -179,7 +190,9 @@ def _onsets_ends_nonoverlapping_from_raw(
     if not isinstance(annotations, tuple): 
         annotations = tuple(annotations)
     annotations_df = raw.annotations.to_data_frame()
-    mask_to_keep = annotations_df.description.str.lower().str.startswith(annotations)
+    # HERE, removed the str.lower() for now
+    #mask_to_keep = annotations_df.description.str.lower().str.startswith(annotations)
+    mask_to_keep = annotations_df.description.str.startswith(annotations)
     idx_to_keep = np.where(mask_to_keep)[0]
     onsets, ends = _onsets_ends_from_indices(raw, idx_to_keep)
     onsets, ends = _onsets_ends_time_restriction(onsets, ends, Nstart, Nend, True, verbose)
@@ -237,7 +250,7 @@ def _onsets_ends_to_intervals(onsets, ends):
 # Boolean Mask Operations
 
 def _intervals_to_onsets_ends(intervals): 
-    if not len(intervals): 
+    if not np.shape(intervals)[1]: 
         return np.array([], dtype = int), np.array([], dtype = int)
     return intervals[:, 0], intervals[:, 1] #NEED TO RECHECK THIS AXIS THING WITH THE INTERVALS
 
@@ -252,7 +265,7 @@ def _filter_intervals_by_length(
     return intervals[lengths >= Nmin]
 
 
-def _unique_vals_sorted(*intervals_list: np.ndarray) -> np.ndarray: 
+def _unique_vals_sorted(intervals_list: np.ndarray) -> np.ndarray: 
     """_summary_
 
     Returns:
@@ -282,7 +295,7 @@ def _bool_mask_to_intervals(
         unique_vals
 ): 
     if not np.any(bool_mask): 
-        return np.array([], int), np.array([], int)
+        return np.array([[]], int)
     interval_starts = np.where(bool_mask & np.concatenate([[True], ~bool_mask[:-1]]))[0]
     interval_ends = np.where(bool_mask & np.concatenate([~bool_mask[1:], [True]]))[0]
     interval_ends = interval_ends + 1 
@@ -320,6 +333,8 @@ def _intervals_subtraction_boolean(
 ): 
     if not len(intervals1): 
         return np.array([])
+    if not len(intervals2): 
+        return intervals1
     intervals_list = _sanitize_intervals_list([intervals1, intervals2])
     unique_vals = _unique_vals_sorted(intervals_list)
     bool_mask1 = _intervals_to_bool_mask(intervals1, unique_vals)

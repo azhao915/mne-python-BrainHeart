@@ -8,9 +8,8 @@ import pyqtgraph as pg
 import numpy as np
 import sys
 
-from test_spectrum import welch_with_CI
+from mne.brainheart.testing.test_spectrum import welch_with_CI
 
-from copy import deepcopy
 
 class TFRBrowser(QMainWindow):
     def __init__(self, 
@@ -56,6 +55,7 @@ class TFRBrowser(QMainWindow):
         self._update_display()
         
     def _setup_ui(self):
+
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout()
@@ -124,14 +124,6 @@ class TFRBrowser(QMainWindow):
             brush = pg.mkBrush(color = (255, 0, 0, 50))
         )
         self.plot_power_spectrum_widget.addItem(self.spectrum_fill)
-
-        self.colorbar = pg.ColorBarItem(
-            values=(0, 1),
-            colorMap=colormap
-        )
-        self.colorbar.setImageItem(self.image_item)
-
-        #self.plot_tfr_widget.addItem(self.colorbar)
         
         #Link the X-axes so they zoom/pan together
         if self.raw is not None: 
@@ -352,6 +344,7 @@ class TFRBrowser(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
     from mne.brainheart.load_reference_dataset import load
 
     raw = load()

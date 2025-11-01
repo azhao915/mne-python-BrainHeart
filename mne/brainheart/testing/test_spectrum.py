@@ -129,27 +129,8 @@ def plot_psd_with_CI(
 
 
 if __name__ == "__main__": 
-    import mne_bids
-    import mne
-    bids_root = r"D:/DABI/StimulationDataset"
-    ext = "vhdr" #extension for the recording
-    subject = "4r3o" #sample
-    sess = "postimp"
-    datatype = "ieeg"
-    suffix = "ieeg"
-    run = "01"
-    extension = "vhdr"
-    bids_paths = mne_bids.BIDSPath(root = bids_root, 
-                                session = sess, 
-                                subject = subject, 
-                                datatype=datatype, 
-                                suffix = suffix,
-                                run = run, 
-                                extension= extension
-                                )
-    bids_path = bids_paths.match()[0]
-    #Load
-    raw = mne_bids.read_raw_bids(bids_path)
+    from load_reference_dataset import load
+    raw = load()
     raw.load_data()
 
     dB = True

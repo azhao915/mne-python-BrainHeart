@@ -10,7 +10,7 @@ from mne.brainheart.annotations_utils import _onsets_ends_to_intervals
 def _inter_peaks_from_windows(
         peaks: list[list[int]] | list[int],
         sfreq: int
-) -> list[list[float]]:
+) -> list[np.ndarray]:
     peaks = _format_peaks(peaks)
     return [np.diff(np.where(peak_win)[0])*sfreq*60 for peak_win in peaks]
 
@@ -43,15 +43,28 @@ def _peaks_from_intervals(intervals, events, event_id: int | None = None, flatte
     return peaks
 
 
-def _write_events_to_stim(events: np.ndarray, raw: BaseRaw, ch_name: str | None = None): 
-    if ch_name is None: 
+def write_events_to_channel(
+        events: np.ndarray, 
+        raw: BaseRaw, 
+        ch_name: str | None = None,
+        ch_type: str = "ecg"): 
+    if ch_name is None or events is None: 
         return
     data = np.zeros((1, raw.n_times), dtype = int)
-    for event_id in np.unique(events[:, 2]): 
-        event_mask = events[:, 2] == event_id
-        events_index = events[event_mask]
-        data[0, events_index] = event_id
-    return _write_to_stim(data, raw, ch_name)
+    if events.ndim == 1: 
+        if len(events):
+            # Then just a bunch of indices
+            data[0, events] = 1
+    else: 
+        for event_id in np.unique(events[:, 2]): 
+            event_mask = events[:, 2] == event_id
+            events_index = events[event_mask]
+            data[0, events_index] = event_id
+    return _add_data_to_raw(
+        raw = raw, 
+        data = data, 
+        ch_names = ch_name, 
+        ch_types = ch_type)
 
 
 def _write_events_dict_to_stim(events_dict: dict, raw: BaseRaw, ch_types: list[str] | str | None = None): 
@@ -63,13 +76,20 @@ def _write_events_dict_to_stim(events_dict: dict, raw: BaseRaw, ch_types: list[s
     ch_names = list(ch_names)
     return _add_data_to_raw(raw, data, ch_names, ch_types)
 
-def _add_data_to_raw(raw: BaseRaw, data: np.ndarray, ch_names: list[str], ch_types: list[str] | str | None = None):
+def _add_data_to_raw(
+        raw: BaseRaw, 
+        data: np.ndarray, 
+        ch_names: list[str], 
+        ch_types: list[str] | str | None = None):
+    
+    if isinstance(data, Series): 
+        data = data.values
     if data.ndim == 1: 
         data = data[None, :]
     if isinstance(ch_names, str): 
         ch_names = [ch_names]
     if ch_types is None: 
-        ch_types = ["stim"]*len(ch_names)
+        ch_types = ["ecg"]*len(ch_names)
     elif isinstance(ch_types, str): 
         ch_types = [ch_types]*len(ch_names)
     new_info = create_info(ch_names, raw.info["sfreq"], ch_types = ch_types)
@@ -77,10 +97,17 @@ def _add_data_to_raw(raw: BaseRaw, data: np.ndarray, ch_names: list[str], ch_typ
     return raw.add_channels([new_raw], force_update_info = True)
 
 
-def _write_to_stim(data: np.ndarray, raw: BaseRaw, ch_name: str | None = None): 
+def write_to_channel(
+        data: np.ndarray, 
+        raw: BaseRaw, 
+        ch_name: str | None = None, 
+        ch_type: str = "ecg"): 
     if ch_name is None: 
         return raw
-    new_info = create_info([ch_name], raw.info["sfreq"], ch_types = ["stim"])
+    new_info = create_info(
+        [ch_name], 
+        raw.info["sfreq"], 
+        ch_types = [ch_type])
     if isinstance(data, Series): 
         data = data.values
         data = np.reshape(data, (1, len(data)))
@@ -96,7 +123,6 @@ def _mask_from_intervals(intervals, N):
 
 
 def _intervals_from_mask(mask): 
-    # Taken partially from my utils.bool_mask_to_intervals
     if not np.any(mask): 
         return np.array([], int), np.array([], int)
     interval_starts = np.where(mask & np.concatenate([[True], ~mask[:-1]]))[0]

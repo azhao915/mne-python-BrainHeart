@@ -15,7 +15,9 @@ class ECG_Channels(Enum):
     ECG_fixpeaks_missed = 'ECG_fixpeaks_missed'
     ECG_fixpeaks_extra = 'ECG_fixpeaks_extra'
     ECG_fixpeaks_longshort = 'ECG_fixpeaks_longshort'
-    #
+    # The corrected Heart-Rate, or NN Rate
+    ECG_Rate_Corrected = "ECG_Rate_Corrected"
+    
     ECG_P_Peaks = "ECG_P_Peaks"
     ECG_P_Onsets = "ECG_P_Onsets"
     ECG_P_Offsets = "ECG_P_Offsets"

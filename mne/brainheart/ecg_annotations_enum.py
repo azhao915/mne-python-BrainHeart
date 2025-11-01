@@ -5,3 +5,4 @@ class ECG_Annotations(Enum):
     '''
     ECG_Valid = "ECG_Valid"
     bad_ECG = "bad_ECG"
+    bad_ECG_ZHAO2018 = "bad_ECG_ZHAO2018"

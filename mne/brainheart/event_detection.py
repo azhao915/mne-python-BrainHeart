@@ -74,15 +74,6 @@ def find_events(
     if not n_peaks:
         Warning("No peaks were found")
         return None, None, None
-    #Now Annotate the valid ecg periods
-    if annotate_valid_period is not None:
-        ecg_annotations = mne.Annotations(
-            onset = onsets/sfreq,
-            duration = (ends - onsets)/sfreq,
-            description = annotate_valid_period, 
-        )
-        #Now add to existing annotations
-        raw.set_annotations(raw.annotations + ecg_annotations)
     average_rate = _average_rate_from_windows(peaks, sfreq)
     return (
         np.stack([
@@ -118,11 +109,9 @@ def sliding_window_accept_reject(
         accept_reject_func: Callable, 
         window_time_sec: int | float = 30,
         window_overlap_sec: int | float = 0, #TO FIX, Would probably need to remove this window_overlap_sec parameter
-        tstart: int | float | None = 0.0,
-        tend: int | float | None = None,
-        valid_annotations: str | list[str] | None = None,
-        reject_by_annotations: str | list[str] | None = None,
-        annotations_name: str | None = "ecg_acceptable", 
+        onsets: np.ndarray | list | None = None,
+        ends: np.ndarray | list | None = None,
+        accept_remaining_after_window: bool = True,
         verbose = True,
         **kwargs
 ): 
@@ -148,13 +137,10 @@ def sliding_window_accept_reject(
     window_N = int(window_time_sec*sfreq)
     window_overlap_N = int(window_overlap_sec*sfreq)
     assert window_overlap_N < window_N
-    onsets, ends = _annotations_start_stop_improved(
-        raw = raw,
-        annotations_to_keep = valid_annotations, 
-        annotations_to_reject = reject_by_annotations,
-        tmin = tstart, 
-        tmax = tend
-    )
+
+    # REMOVE LATER
+    import neurokit2 as nk
+
     onsets_quality, ends_quality = [], []
     for i, (onset, end) in enumerate(zip(onsets, ends)):
         curr_window_acceptable_onset = None
@@ -162,6 +148,11 @@ def sliding_window_accept_reject(
         for window_onset in range(onset, end - window_N, window_N - window_overlap_N):
             window_end = window_onset + window_N
             segment, _ = raw[pick, window_onset:window_end]
+            print(
+                window_onset, window_end, nk.ecg_quality(
+                    segment.flatten(), sampling_rate = raw.info["sfreq"], method = "zhao2018"
+                )
+            )
             if accept_reject_func(segment, sfreq, **kwargs):
                 if curr_window_acceptable_onset is None:
                     curr_window_acceptable_onset = window_onset
@@ -176,17 +167,16 @@ def sliding_window_accept_reject(
         #Save the final segment if it exists
         if curr_window_acceptable_end is not None:
             onsets_quality.append(curr_window_acceptable_onset)
-            ends_quality.append(curr_window_acceptable_end)
+            if accept_remaining_after_window: 
+                # Assume the ends are sorted, but do this just in case
+                ends_quality.append(
+                    int(np.max(ends))
+                )
+            else: 
+                ends_quality.append(curr_window_acceptable_end)
     #now annotate the raw object
     #First convert back to np.ndarray
     onsets_quality = np.array(onsets_quality, dtype = int)
     ends_quality = np.array(ends_quality, dtype = int)
-    if not annotations_name is None:
-        annotations = mne.Annotations(
-            onset = onsets_quality/sfreq,
-            duration = (ends_quality - onsets_quality)/sfreq,
-            description = annotations_name, 
-        )
-        raw.set_annotations(raw.annotations + annotations)
     return onsets_quality, ends_quality
 
