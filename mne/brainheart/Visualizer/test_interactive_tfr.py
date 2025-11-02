@@ -2,11 +2,21 @@ from PyQt5.QtGui import QKeyEvent
 import mne 
 import numpy as np
 
-from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel
+from PyQt5.QtWidgets import (
+    QMainWindow, 
+    QApplication, 
+    QWidget, 
+    QVBoxLayout, 
+    QHBoxLayout, 
+    QPushButton, 
+    QLabel)
+
 from PyQt5.QtCore import Qt
 import pyqtgraph as pg
 import numpy as np
 import sys
+
+from ChannelManager import ChannelManager
 
 from mne.brainheart.testing.test_spectrum import welch_with_CI
 
@@ -39,6 +49,7 @@ class TFRBrowser(QMainWindow):
         self.display_annotations = True
 
         self.ch_names = tf.ch_names
+        self.n_channels = len(self.ch_names)
 
         # Current State
         self.current_channel = 0
@@ -61,21 +72,10 @@ class TFRBrowser(QMainWindow):
         main_layout = QVBoxLayout()
         central_widget.setLayout(main_layout)
 
-        channel_layout = QHBoxLayout()
+        self.channel_manager = ChannelManager(self.ch_names, self.current_channel)
+        self.channel_manager.channel_changed.connect(self._on_channel_changed)
 
-        self.prev_ch_btn = QPushButton("◀ Previous Channel")
-        self.prev_ch_btn.clicked.connect(self._prev_channel)
-        channel_layout.addWidget(self.prev_ch_btn)
-
-        self.ch_label =QLabel()
-        self.ch_label.setAlignment(Qt.AlignCenter)
-        channel_layout.addWidget(self.ch_label)
-
-        self.next_ch_btn = QPushButton("Next Channel ▶")
-        self.next_ch_btn.clicked.connect(self._next_channel)
-        channel_layout.addWidget(self.next_ch_btn)
-
-        main_layout.addLayout(channel_layout)
+        main_layout.addWidget(self.channel_manager)
         
         if self.raw is not None: 
             # Time Trace
@@ -129,12 +129,9 @@ class TFRBrowser(QMainWindow):
         if self.raw is not None: 
             self.plot_time_widget.setXLink(self.plot_tfr_widget)
 
-        self._update_channel_label()
-
-    def _update_channel_label(self): 
-        self.ch_label.setText(
-            f"Channel: {self.ch_names[self.current_channel]}({self.current_channel + 1}/{len(self.ch_names)})"
-        )
+    def _on_channel_changed(self, new_channel): 
+        self.current_channel = new_channel
+        self._update_display()
 
     def _toggle_annotations(self): 
         self.display_annotations = not self.display_annotations
@@ -215,18 +212,6 @@ class TFRBrowser(QMainWindow):
             self.plot_tfr_widget.addItem(tfr_region)
             self.tfr_annotation_list.append(tfr_region)
 
-
-    def _prev_channel(self): 
-        if self.current_channel > 0: 
-            self.current_channel -= 1
-            self._update_channel_label
-            self._update_display()
-    
-    def _next_channel(self): 
-        if self.current_channel < len(self.ch_names) - 1: 
-            self.current_channel += 1
-            self._update_channel_label
-            self._update_display()
     
     def _update_display(self): 
         start_idx = int(self.current_time * self.sfreq_tf)
@@ -283,7 +268,6 @@ class TFRBrowser(QMainWindow):
             padding = 0
         )
 
-        self._update_channel_label()
         self._update_annotations()
 
 
@@ -318,11 +302,11 @@ class TFRBrowser(QMainWindow):
             
         elif event.key() == Qt.Key_Up:
             # Previous channel
-            self._prev_channel()
+            self.channel_manager._prev_channel()
             
         elif event.key() == Qt.Key_Down:
             # Next channel
-            self._next_channel()
+            self.channel_manager._next_channel()
             
         elif event.key() == Qt.Key_Home:
             # Decrease window duration
