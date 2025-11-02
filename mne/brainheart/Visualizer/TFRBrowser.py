@@ -19,8 +19,10 @@ import sys
 from ChannelManager import ChannelManager
 from AnnotationsManager import AnnotationsManager
 
-from mne.brainheart.testing.test_spectrum import welch_with_CI
+from TimePlotting import TimePlotting
+from TFRPlotting import TFRPlotting
 
+from mne.brainheart.testing.test_spectrum import welch_with_CI
 
 
 class TFRBrowser(QMainWindow):
@@ -33,6 +35,57 @@ class TFRBrowser(QMainWindow):
                  current_time: float = 0.0,
                  ):
         super().__init__()
+
+        self.setStyleSheet("""
+            QMainWindow, QWidget {
+                background-color: #0d0d0d;
+                color: #e0e0e0;
+                font-family: 'Monospace', 'Courier New', monospace;
+            }
+            
+            QLabel {
+                color: #a0a0a0;
+                font-size: 11px;
+                font-weight: normal;
+                padding: 2px;
+            }
+            
+            QPushButton {
+                background-color: transparent;
+                color: #e0e0e0;
+                border: 1px solid #2a2a2a;
+                padding: 4px 10px;
+                border-radius: 0px;
+                font-size: 10px;
+                font-family: 'Monospace', 'Courier New', monospace;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }
+            
+            QPushButton:hover {
+                background-color: #1a1a1a;
+                border: 1px solid #3a3a3a;
+                color: #ffffff;
+            }
+            
+            QPushButton:pressed {
+                background-color: #0a0a0a;
+                border: 1px solid #1a1a1a;
+            }
+            
+            QPushButton:disabled {
+                background-color: transparent;
+                color: #404040;
+                border: 1px solid #1a1a1a;
+            }
+            
+            /* Minimal separator lines */
+            QFrame {
+                border: none;
+                background-color: #1a1a1a;
+            }
+        """)
+
         self.data = tf.data # (n_chan, n_freqs, n_times)
         self.dB = dB
         if self.dB: 
@@ -55,9 +108,6 @@ class TFRBrowser(QMainWindow):
 
         # Current State
         self.current_channel = 0
-        self.window_duration = 10.0
-        self.current_time = 0.0
-        
         # Window parameters
         self.window_duration = window_duration  # seconds to show
         self.current_time = current_time  # start time
@@ -88,62 +138,36 @@ class TFRBrowser(QMainWindow):
         
         if self.raw is not None: 
             # Time Trace
-            self.plot_time_widget = pg.PlotWidget()
-            self.plot_time_widget.setLabel("left", "V")
-            self.plot_time_widget.setLabel("bottom", "Time (s)")
-
-            main_layout.addWidget(self.plot_time_widget)
-
-            self.line_item = self.plot_time_widget.plot([], [])
+            self.plot_time_widget = TimePlotting(
+                raw = self.raw, 
+                curr_channel = self.current_channel, 
+                curr_time = self.current_time, 
+                window_duration = self.window_duration
+            )
 
             self.annot_manager.register_plot(
                 plot_name = "time", 
                 plot_widget = self.plot_time_widget)
-
-
-        tfr_layout = QHBoxLayout()
-        main_layout.addLayout(tfr_layout)
+            
+            main_layout.addWidget(self.plot_time_widget)
         
-        self.plot_tfr_widget = pg.PlotWidget()
-        self.plot_tfr_widget.setLabel("left", "Frequency (Hz)")
-        self.plot_tfr_widget.setLabel("bottom", "Time (s)")
-        tfr_layout.addWidget(self.plot_tfr_widget, 5)
+        self.tfr_widget = TFRPlotting(
+            tf = tf, 
+            curr_channel = self.current_channel, 
+            curr_time = self.current_time, 
+            window_duration = self.window_duration, 
+            dB = self.dB
+        )
+        main_layout.addWidget(self.tfr_widget)
 
-
-        # Link the Annotations Manager
         self.annot_manager.register_plot(
-            plot_name = "time_frequency", 
-            plot_widget = self.plot_tfr_widget
+            plot_name = "tfr", 
+            plot_widget = self.tfr_widget.plot_tfr_widget
         )
 
-
-        self.image_item = pg.ImageItem()
-        self.plot_tfr_widget.addItem(self.image_item)
-
-        colormap = pg.colormap.get("inferno")
-        self.image_item.setColorMap(colormap)
-
-        # Now add the Power Spectrum Widget
-        self.plot_power_spectrum_widget = pg.PlotWidget()
-        self.plot_power_spectrum_widget.setLabel("left", "Frequency (Hz)")
-        self.plot_power_spectrum_widget.setLabel("bottom", "Power")
-        tfr_layout.addWidget(self.plot_power_spectrum_widget, 1)
-
-        self.power_spectrum_item = self.plot_power_spectrum_widget.plot([], [])
-
-        self.spectrum_lower = pg.PlotDataItem([], [])
-        self.spectrum_upper = pg.PlotDataItem([], [])
-
-        self.spectrum_fill = pg.FillBetweenItem(
-            self.spectrum_lower, 
-            self.spectrum_upper, 
-            brush = pg.mkBrush(color = (255, 0, 0, 50))
-        )
-        self.plot_power_spectrum_widget.addItem(self.spectrum_fill)
-        
         #Link the X-axes so they zoom/pan together
         if self.raw is not None: 
-            self.plot_time_widget.setXLink(self.plot_tfr_widget)
+            self.plot_time_widget.setXLink(self.tfr_widget.plot_tfr_widget)
 
 
     def _on_channel_changed(self, new_channel): 
@@ -152,59 +176,20 @@ class TFRBrowser(QMainWindow):
 
     
     def _update_display(self): 
-        start_idx = int(self.current_time * self.sfreq_tf)
-        end_idx = int((self.current_time + self.window_duration)*self.sfreq_tf)    
-        end_idx = min(end_idx, len(self.times))
-
-        time_slice = slice(start_idx, end_idx)
-        tfr_data = self.data[self.current_channel, :, time_slice]
-
-        self.image_item.setImage(tfr_data.T, autoLevels = True)
-
-        # Now update the Power Spectrum
-        _, psd, _, lower, upper = welch_with_CI(None, tfr_data)
-        self.power_spectrum_item.setData(psd, self.freqs)
-        self.spectrum_lower.setData(lower, self.freqs)
-        self.spectrum_upper.setData(upper, self.freqs)
-
-        vmin = np.percentile(tfr_data, 1)
-        vmax = np.percentile(tfr_data, 99)
-
-        self.image_item.setLevels([vmin, vmax])
+        self.tfr_widget._update_display(
+            curr_channel = self.current_channel, 
+            curr_time = self.current_time, 
+            window_duration = self.window_duration
+        )
 
         if self.raw is not None: 
-            # Update the upper trace
-            start_idx_raw = int(self.current_time*raw.info["sfreq"])
-            end_idx_raw = int((self.current_time + self.window_duration)*raw.info["sfreq"]) 
-            times = self.current_time + np.arange(end_idx_raw - start_idx_raw)/raw.info["sfreq"]
-            curr_index_in_raw = mne.pick_channels(raw.ch_names, [tf.ch_names[self.current_channel]])[0]
-            raw_trace = raw.get_data(
-                picks = curr_index_in_raw, 
-                return_times = False, 
-                start = start_idx_raw, 
-                stop = end_idx_raw).flatten()
-            self.line_item.setData(times, raw_trace)
+            # Update the Upper Trace
+            self.plot_time_widget._update_display(
+                curr_channel_name = tf.ch_names[self.current_channel], 
+                curr_time = self.current_time, 
+                window_duration = self.window_duration
+            )
 
-
-        # (x, y) is bottom-left corner
-        self.image_item.setRect(
-            self.current_time, # x position (time) 
-            self.freqs[0], # y position (freq)
-            self.window_duration,  # width in time
-            self.freqs[-1] - self.freqs[0] # height in freq
-        )
-
-        self.plot_tfr_widget.setXRange(
-            self.current_time, 
-            self.current_time + self.window_duration, 
-            padding = 0
-        )
-
-        self.plot_tfr_widget.setYRange(
-            self.freqs[0], 
-            self.freqs[-1], 
-            padding = 0
-        )
 
         self.annot_manager.update_annotations(
             self.current_time, 
