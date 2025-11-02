@@ -1,7 +1,7 @@
 import pyqtgraph as pg
 import numpy as np
 
-class TimePlotting(pg.PlotWidget): 
+class TimeWidget(pg.PlotWidget): 
     def __init__(
             self, 
             raw, 

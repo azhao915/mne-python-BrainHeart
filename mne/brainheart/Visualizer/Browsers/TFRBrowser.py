@@ -16,14 +16,15 @@ import pyqtgraph as pg
 import numpy as np
 import sys
 
-from ChannelManager import ChannelManager
-from AnnotationsManager import AnnotationsManager
+from mne.brainheart.Visualizer.Managers.ChannelManager import ChannelManager
+from mne.brainheart.Visualizer.Managers.AnnotationsManager import AnnotationsManager
 
-from TimePlotting import TimePlotting
-from TFRPlotting import TFRPlotting
+from mne.brainheart.Visualizer.Widgets.TimeWidget import TimeWidget
+from mne.brainheart.Visualizer.Widgets.TFRWidget import TFRWidget
 
 from mne.brainheart.testing.test_spectrum import welch_with_CI
 
+from mne.brainheart.Visualizer.StyleSheets import minimalist_sheet
 
 class TFRBrowser(QMainWindow):
     def __init__(self, 
@@ -36,55 +37,7 @@ class TFRBrowser(QMainWindow):
                  ):
         super().__init__()
 
-        self.setStyleSheet("""
-            QMainWindow, QWidget {
-                background-color: #0d0d0d;
-                color: #e0e0e0;
-                font-family: 'Monospace', 'Courier New', monospace;
-            }
-            
-            QLabel {
-                color: #a0a0a0;
-                font-size: 11px;
-                font-weight: normal;
-                padding: 2px;
-            }
-            
-            QPushButton {
-                background-color: transparent;
-                color: #e0e0e0;
-                border: 1px solid #2a2a2a;
-                padding: 4px 10px;
-                border-radius: 0px;
-                font-size: 10px;
-                font-family: 'Monospace', 'Courier New', monospace;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-            }
-            
-            QPushButton:hover {
-                background-color: #1a1a1a;
-                border: 1px solid #3a3a3a;
-                color: #ffffff;
-            }
-            
-            QPushButton:pressed {
-                background-color: #0a0a0a;
-                border: 1px solid #1a1a1a;
-            }
-            
-            QPushButton:disabled {
-                background-color: transparent;
-                color: #404040;
-                border: 1px solid #1a1a1a;
-            }
-            
-            /* Minimal separator lines */
-            QFrame {
-                border: none;
-                background-color: #1a1a1a;
-            }
-        """)
+        self.setStyleSheet(minimalist_sheet)
 
         self.data = tf.data # (n_chan, n_freqs, n_times)
         self.dB = dB
@@ -138,7 +91,7 @@ class TFRBrowser(QMainWindow):
         
         if self.raw is not None: 
             # Time Trace
-            self.plot_time_widget = TimePlotting(
+            self.plot_time_widget = TimeWidget(
                 raw = self.raw, 
                 curr_channel = self.current_channel, 
                 curr_time = self.current_time, 
@@ -151,7 +104,7 @@ class TFRBrowser(QMainWindow):
             
             main_layout.addWidget(self.plot_time_widget)
         
-        self.tfr_widget = TFRPlotting(
+        self.tfr_widget = TFRWidget(
             tf = tf, 
             curr_channel = self.current_channel, 
             curr_time = self.current_time, 
@@ -231,6 +184,8 @@ class TFRBrowser(QMainWindow):
         
         elif event.key() == Qt.Key_Enter - 1: 
             curr_time = self.annot_manager._to_next_annotation()
+            if curr_time is None: 
+                return
             self.current_time = curr_time
             self._update_display()
 

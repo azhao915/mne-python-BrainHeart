@@ -8,7 +8,7 @@ from mne.brainheart.annotations_utils import _annotations_start_stop_improved, w
 from mne.brainheart.ecg_annotations_enum import ECG_Annotations
 from mne.brainheart.utils import _add_data_to_raw
 
-from ecg_channel_names_enum import ECG_Channels
+from mne.brainheart.ecg_channel_names_enum import ECG_Channels
 
 from functools import wraps
 

@@ -4,7 +4,7 @@ import numpy as np
 
 from mne.brainheart.testing.test_spectrum import welch_with_CI
 
-class TFRPlotting(QWidget): 
+class TFRWidget(QWidget): 
     def __init__(
             self, 
             tf,

@@ -49,6 +49,7 @@ def ecg_process_neurokit(
         **kwargs
 ): 
     _, ecg_data = _select_single_ecg_channel(raw, ecg_ch_name, return_data = True)
+    ecg_data = ecg_data.flatten()
     ecg_df, ecg_event_indices = nk.ecg_process(ecg_data, sampling_rate = raw.info["sfreq"], **kwargs)
 
     # Now convert the ecg_event_indices to a dict for the relevant measures
