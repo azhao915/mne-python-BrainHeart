@@ -1,11 +1,9 @@
 from PyQt5.QtCore import QObject, pyqtSignal
-
+from mne.brainheart.Visualizer.Managers.AnnotationsManager import AnnotationsManager
 
 class TimeManager(QObject): 
     
     # Signals
-    time_changed = pyqtSignal(float)
-    window_duration_changed = pyqtSignal(float)
     time_params_changed = pyqtSignal(float, float)
 
     def __init__(
@@ -24,6 +22,8 @@ class TimeManager(QObject):
         self.min_duration = 0.5
 
         self.widgets = []
+
+        self.annot_manager = None
 
     def register_widget(self, widget): 
         if not hasattr(widget, "_update_display"): 
@@ -59,6 +59,31 @@ class TimeManager(QObject):
                     window_duration = d
                 )
             )
+
+    def register_annotations_manager(self, manager: AnnotationsManager): 
+        if not hasattr(manager, "update_annotations"): 
+            raise ValueError("manager must have a update_annotations method")
+        if not hasattr(manager, "_to_next_annotation"): 
+            raise ValueError("manager must have a _to_next_annotation method")
+        self.annot_manager = manager
+        self.time_params_changed.connect(
+            lambda t, d: manager.update_annotations(
+                current_time = t, 
+                window_duration = d
+            )
+        )
+        # first update
+        manager.update_annotations(
+            current_time = self.current_time, 
+            window_duration = self.window_duration
+        )
+    
+    def to_next_annotation(self): 
+        if self.annot_manager is None or not self.annot_manager.display_annotations: 
+            return
+        current_time = self.annot_manager._to_next_annotation()
+        if current_time is not None: 
+            self.set_time(current_time)
         
 
     def set_time(self, new_time: float): 
@@ -69,7 +94,6 @@ class TimeManager(QObject):
             new_time = min(new_time, self.max_time)
         if new_time != self.current_time: 
             self.current_time = new_time
-            self.time_changed.emit(self.current_time)
             self.time_params_changed.emit(
                 self.current_time, 
                 self.window_duration
@@ -85,16 +109,12 @@ class TimeManager(QObject):
         if new_duration != self.window_duration: 
             self.window_duration = new_duration
 
-            time_changed = False
             if self.max_time is not None: 
                 max_valid_time = self.max_time - self.window_duration
                 if self.current_time > max_valid_time: 
                     self.current_time = self.set_time(max_valid_time)
-                    time_changed = True
-                
-            self.window_duration_changed.emit(self.window_duration)
-            if time_changed: 
-                self.time_params_changed.emit(self.current_time, self.window_duration)
+                    
+            self.time_params_changed.emit(self.current_time, self.window_duration)
 
     def scroll_forward(self, prop = 0.25): 
         self.set_time(self.current_time + self.window_duration * prop)

@@ -81,6 +81,10 @@ class TFRBrowser(QMainWindow):
             max_time = self.times[-1]
         )
 
+        self.time_manager.register_annotations_manager(
+            self.annot_manager
+        )
+
         self.setWindowTitle("TFR Browser")
         self.resize(1200, 800)
         self._setup_ui()
@@ -178,16 +182,12 @@ class TFRBrowser(QMainWindow):
 
         
         elif event.key() == Qt.Key_Enter - 1: 
-            curr_time = self.annot_manager._to_next_annotation()
-            if curr_time is None: 
-                return
-            self.current_time = curr_time
-            self.time_manager.set_time(curr_time)
+            self.time_manager.to_next_annotation()
 
 
 
         elif event.key() == Qt.Key_Delete: 
-            self.annot_manager._toggle_annotations()
+            self.annot_manager.toggle_annotations()
 
 
 if __name__ == "__main__":

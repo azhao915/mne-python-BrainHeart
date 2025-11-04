@@ -94,10 +94,11 @@ class AnnotationsManager(QObject):
     def redraw_annotations(
             self
     ):
-        if self.annotations is None or not self.display_annotations: 
+        if self.annotations is None: 
             return
-        
         self._clear_annotations()
+        if not self.display_annotations: 
+            return
         
         end_time = self.current_time + self.window_duration
 
