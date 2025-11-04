@@ -18,6 +18,7 @@ import sys
 
 from mne.brainheart.Visualizer.Managers.ChannelManager import ChannelManager
 from mne.brainheart.Visualizer.Managers.AnnotationsManager import AnnotationsManager
+from mne.brainheart.Visualizer.Managers.TimeManager import TimeManager
 
 from mne.brainheart.Visualizer.Widgets.TimeWidget import TimeWidget
 from mne.brainheart.Visualizer.Widgets.TFRWidget import TFRWidget
@@ -70,6 +71,20 @@ class TFRBrowser(QMainWindow):
             annotations = self.annotations,
             current_time = self.current_time, 
             window_duration = self.window_duration 
+        )
+
+        # Time Manager
+        # Might move this if add a Widget component
+        self.time_manager = TimeManager(
+            initial_time = self.current_time,
+            initial_duration = self.window_duration, 
+            max_time = self.times[-1]
+        )
+        self.time_manager.time_changed.connect(
+            self._on_time_changed
+        )
+        self.time_manager.window_duration_changed.connect(
+            self._on_window_duration_changed
         )
 
         self.setWindowTitle("TFR Browser")
@@ -127,6 +142,14 @@ class TFRBrowser(QMainWindow):
         self.current_channel = new_channel
         self._update_display()
 
+    def _on_time_changed(self, new_time): 
+        self.current_time = new_time
+        self._update_display()
+
+    def _on_window_duration_changed(self, new_duration):
+        self.window_duration = new_duration
+        self._update_display()
+
     
     def _update_display(self): 
         self.tfr_widget._update_display(
@@ -152,16 +175,22 @@ class TFRBrowser(QMainWindow):
         if event is None: 
             return
         if event.key() == Qt.Key_Right: 
+            '''
             self.current_time += self.window_duration / 4
             self.current_time = min(self.current_time,
                                     self.times[-1] - self.window_duration)
             self._update_display()
+            '''
+            self.time_manager.scroll_forward()
 
         elif event.key() == Qt.Key_Left:
+            '''
             self.current_time -= self.window_duration / 4
             self.current_time = max(0, self.current_time)
             self._update_display()
-            
+            '''
+            self.time_manager.scroll_backward()
+
         elif event.key() == Qt.Key_Up:
             # Previous channel
             self.channel_manager._prev_channel()
