@@ -52,7 +52,7 @@ class TimeManager(QObject):
                     self.current_time = self.set_time(max_valid_time)
                 
             self.window_duration_changed.emit(self.window_duration)
-            self.window_duration_changed.emit(self.current_time, self.window_duration)
+            self.time_params_changed.emit(self.current_time, self.window_duration)
 
     def scroll_forward(self, prop = 0.25): 
         self.set_time(self.current_time + self.window_duration * prop)
@@ -61,9 +61,9 @@ class TimeManager(QObject):
         self.set_time(self.current_time - self.window_duration * prop)
 
     def zoom_in(self, prop = 0.8): 
-        self.set_window_duration(self.set_window_duration * prop)
+        self.set_window_duration(self.window_duration * prop)
     
     def zoom_out(self, prop = 1.25): 
-        self.set_window_duration(self.set_window_duration * prop)
+        self.set_window_duration(self.window_duration * prop)
 
 

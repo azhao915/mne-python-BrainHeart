@@ -175,20 +175,9 @@ class TFRBrowser(QMainWindow):
         if event is None: 
             return
         if event.key() == Qt.Key_Right: 
-            '''
-            self.current_time += self.window_duration / 4
-            self.current_time = min(self.current_time,
-                                    self.times[-1] - self.window_duration)
-            self._update_display()
-            '''
             self.time_manager.scroll_forward()
 
         elif event.key() == Qt.Key_Left:
-            '''
-            self.current_time -= self.window_duration / 4
-            self.current_time = max(0, self.current_time)
-            self._update_display()
-            '''
             self.time_manager.scroll_backward()
 
         elif event.key() == Qt.Key_Up:
@@ -201,14 +190,11 @@ class TFRBrowser(QMainWindow):
             
         elif event.key() == Qt.Key_Home:
             # Decrease window duration
-            self.window_duration = max(1.0, self.window_duration * 0.8)
-            self._update_display()
+            self.time_manager.zoom_in()
             
         elif event.key() == Qt.Key_End:
             # Increase window duration
-            max_dur = self.times[-1]
-            self.window_duration = min(max_dur, self.window_duration * 1.25)
-            self._update_display()
+            self.time_manager.zoom_out()
 
         
         elif event.key() == Qt.Key_Enter - 1: 
