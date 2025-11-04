@@ -16,7 +16,7 @@ class TimeWidget(pg.PlotWidget):
         self.ch_names = raw.ch_names
         self.sfreq = raw.info["sfreq"]
 
-        self.curr_channel = 0
+        self.curr_channel = curr_channel
 
         # Window Parameters
         self.curr_time = curr_time

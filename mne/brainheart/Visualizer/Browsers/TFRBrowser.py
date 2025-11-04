@@ -80,12 +80,6 @@ class TFRBrowser(QMainWindow):
             initial_duration = self.window_duration, 
             max_time = self.times[-1]
         )
-        self.time_manager.time_changed.connect(
-            self._on_time_changed
-        )
-        self.time_manager.window_duration_changed.connect(
-            self._on_window_duration_changed
-        )
 
         self.setWindowTitle("TFR Browser")
         self.resize(1200, 800)
@@ -106,9 +100,10 @@ class TFRBrowser(QMainWindow):
         
         if self.raw is not None: 
             # Time Trace
+            chan_index_in_raw = self.raw.ch_names.index(self.ch_names[self.current_channel])
             self.plot_time_widget = TimeWidget(
                 raw = self.raw, 
-                curr_channel = self.current_channel, 
+                curr_channel = chan_index_in_raw, 
                 curr_time = self.current_time, 
                 window_duration = self.window_duration
             )
@@ -116,6 +111,10 @@ class TFRBrowser(QMainWindow):
             self.annot_manager.register_plot(
                 plot_name = "time", 
                 plot_widget = self.plot_time_widget)
+            
+            self.time_manager.register_widget(
+                self.plot_time_widget
+            )
             
             main_layout.addWidget(self.plot_time_widget)
         
@@ -127,6 +126,10 @@ class TFRBrowser(QMainWindow):
             dB = self.dB
         )
         main_layout.addWidget(self.tfr_widget)
+
+        self.time_manager.register_widget(
+            self.tfr_widget
+        )
 
         self.annot_manager.register_plot(
             plot_name = "tfr", 
@@ -142,30 +145,7 @@ class TFRBrowser(QMainWindow):
         self.current_channel = new_channel
         self._update_display()
 
-    def _on_time_changed(self, new_time): 
-        self.current_time = new_time
-        self._update_display()
-
-    def _on_window_duration_changed(self, new_duration):
-        self.window_duration = new_duration
-        self._update_display()
-
-    
     def _update_display(self): 
-        self.tfr_widget._update_display(
-            curr_channel = self.current_channel, 
-            curr_time = self.current_time, 
-            window_duration = self.window_duration
-        )
-
-        if self.raw is not None: 
-            # Update the Upper Trace
-            self.plot_time_widget._update_display(
-                curr_channel_name = tf.ch_names[self.current_channel], 
-                curr_time = self.current_time, 
-                window_duration = self.window_duration
-            )
-
 
         self.annot_manager.update_annotations(
             self.current_time, 
@@ -202,7 +182,8 @@ class TFRBrowser(QMainWindow):
             if curr_time is None: 
                 return
             self.current_time = curr_time
-            self._update_display()
+            self.time_manager.set_time(curr_time)
+
 
 
         elif event.key() == Qt.Key_Delete: 

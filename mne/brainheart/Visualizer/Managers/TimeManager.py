@@ -23,6 +23,44 @@ class TimeManager(QObject):
         self.min_time = 0.0
         self.min_duration = 0.5
 
+        self.widgets = []
+
+    def register_widget(self, widget): 
+        if not hasattr(widget, "_update_display"): 
+            raise ValueError("widget must have an _update_display method")
+        self.widgets.append(widget)
+
+        self.time_params_changed.connect(
+            lambda t, d: widget._update_display(
+                curr_time = t, 
+                window_duration = d
+            )
+        )
+
+        self.widgets.append(widget)
+
+        # Initial Update
+        widget._update_display(
+            curr_time = self.current_time, 
+            window_duration = self.window_duration
+        )
+    
+    def unregister_widget(self, widget): 
+        if not widget in self.register_widget: 
+            return
+        self.time_params_changed.disconnect()
+        self.widgets.remove(widget)
+
+        # Now reconnect the old widgets
+        for w in self.widgets: 
+            self.time_params_changed.connect(
+                lambda t, d: widget._update_display(
+                    curr_time = t, 
+                    window_duration = d
+                )
+            )
+        
+
     def set_time(self, new_time: float): 
         if new_time is None: 
             return
@@ -46,13 +84,17 @@ class TimeManager(QObject):
         
         if new_duration != self.window_duration: 
             self.window_duration = new_duration
+
+            time_changed = False
             if self.max_time is not None: 
                 max_valid_time = self.max_time - self.window_duration
                 if self.current_time > max_valid_time: 
                     self.current_time = self.set_time(max_valid_time)
+                    time_changed = True
                 
             self.window_duration_changed.emit(self.window_duration)
-            self.time_params_changed.emit(self.current_time, self.window_duration)
+            if time_changed: 
+                self.time_params_changed.emit(self.current_time, self.window_duration)
 
     def scroll_forward(self, prop = 0.25): 
         self.set_time(self.current_time + self.window_duration * prop)
