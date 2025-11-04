@@ -47,6 +47,10 @@ class ECGWidget(QWidget):
 
         for chan in ECG_Channels: 
             chan_name = chan.value
+            if "Phase" in chan_name: 
+                continue
+            if "Raw" in chan_name: 
+                continue
             if not chan_name in raw.ch_names: 
                 continue
             chan_index = raw.ch_names.index(chan_name)

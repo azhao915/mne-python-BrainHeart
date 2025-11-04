@@ -140,7 +140,6 @@ def setup_mri_picking(
             name='selection_marker',
             pickable=False
         )
-        print(actor)
         plotter.render()
         brain.curr_selected_electrode = actor
     
@@ -166,11 +165,11 @@ if __name__ == "__main__":
     import nibabel as nb
     bids_root = r"D:/DABI/StimulationDataset"
     ext = "vhdr" #extension for the recording
-    subject = "2h5u" #sample
+    subject = "0d9l" #sample
     sess = "postimp"
     datatype = "ieeg"
     suffix = "ieeg"
-    run = "03"
+    run = "01"
     extension = "vhdr"
     bids_paths = mne_bids.BIDSPath(root = bids_root, 
                                 session = sess, 
@@ -188,12 +187,18 @@ if __name__ == "__main__":
         f"sub-{subject}",
         subjects_dir=r"D:\DABI\StimulationDataset\derivatives\freesurfer",
         alpha = 0.7, 
-        show = False)
+        show = False, 
+        surf = "pial")
+    # To get the transform
+    path = r"D:\DABI\StimulationDataset\derivatives\freesurfer\sub-0d9l\surf\ct.mgz"
+    import nibabel as nib
+    mri = nib.load(path)
+    trans = mri.header.get_vox2ras_tkr()
     trans = mne.transforms.Transform(fro="head", to="mri", trans=np.eye(4))
     brain.add_sensors(raw.info, trans=trans, seeg = True)
     brain.add_annotation("aparc", borders = False, alpha = 0.2)
     info = raw.info
-    t1 = nb.load(r"D:\DABI\StimulationDataset\sub-4r3o\ses-preimp\anat\sub-4r3o_ses-preimp_acq-T1w_run-01_T1w.nii")
+    t1 = nb.load(rf"D:\DABI\StimulationDataset\sub-{subject}\ses-preimp\anat\sub-{subject}_ses-preimp_acq-T1w_run-01_T1w.nii")
     mri_fig, mri_axes = setup_mri_picking(brain, info, t1)
     brain._renderer.plotter.enable_surface_point_picking(False)
     brain.show()
