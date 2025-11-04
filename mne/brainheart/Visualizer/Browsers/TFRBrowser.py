@@ -19,6 +19,7 @@ import sys
 from mne.brainheart.Visualizer.Managers.ChannelManager import ChannelManager
 from mne.brainheart.Visualizer.Managers.AnnotationsManager import AnnotationsManager
 from mne.brainheart.Visualizer.Managers.TimeManager import TimeManager
+from mne.brainheart.Visualizer.Managers.KeypressManager import KeybindingManager
 
 from mne.brainheart.Visualizer.Widgets.TimeWidget import TimeWidget
 from mne.brainheart.Visualizer.Widgets.TFRWidget import TFRWidget
@@ -101,6 +102,9 @@ class TFRBrowser(QMainWindow):
         self.channel_manager.channel_changed.connect(self._on_channel_changed)
 
         main_layout.addWidget(self.channel_manager)
+
+        # Have to add the Key Press Events here
+        self.keybinding_manager = KeybindingManager(self)
         
         if self.raw is not None: 
             # Time Trace
@@ -140,10 +144,6 @@ class TFRBrowser(QMainWindow):
             plot_widget = self.tfr_widget.plot_tfr_widget
         )
 
-        #Link the X-axes so they zoom/pan together
-        if self.raw is not None: 
-            self.plot_time_widget.setXLink(self.tfr_widget.plot_tfr_widget)
-
 
     def _on_channel_changed(self, new_channel): 
         self.current_channel = new_channel
@@ -158,36 +158,8 @@ class TFRBrowser(QMainWindow):
     def keyPressEvent(self, event: QKeyEvent | None) -> None:
         if event is None: 
             return
-        if event.key() == Qt.Key_Right: 
-            self.time_manager.scroll_forward()
-
-        elif event.key() == Qt.Key_Left:
-            self.time_manager.scroll_backward()
-
-        elif event.key() == Qt.Key_Up:
-            # Previous channel
-            self.channel_manager._prev_channel()
-            
-        elif event.key() == Qt.Key_Down:
-            # Next channel
-            self.channel_manager._next_channel()
-            
-        elif event.key() == Qt.Key_Home:
-            # Decrease window duration
-            self.time_manager.zoom_in()
-            
-        elif event.key() == Qt.Key_End:
-            # Increase window duration
-            self.time_manager.zoom_out()
-
-        
-        elif event.key() == Qt.Key_Enter - 1: 
-            self.time_manager.to_next_annotation()
-
-
-
-        elif event.key() == Qt.Key_Delete: 
-            self.annot_manager.toggle_annotations()
+        if not self.keybinding_manager.handle_key_press(event.key()): 
+            super().keyPressEvent(event)
 
 
 if __name__ == "__main__":

@@ -39,13 +39,32 @@ class TimeManager(QObject):
 
         self.widgets.append(widget)
 
+        # TEMPORARY FIX, need to fix later by having a more unified representation
+
+        if hasattr(widget, "setXLink"): 
+            curr_plot_widget = widget
+        else: 
+            curr_plot_widget = widget.plot_tfr_widget
+        
+        if hasattr(self.widgets[0], "setXLink"): 
+            first_plot_widget = self.widgets[0]
+        else:
+            first_plot_widget = self.widgets[0].plot_tfr_widget
+
+        curr_plot_widget.setXLink(first_plot_widget)
+
         # Initial Update
         widget._update_display(
             curr_time = self.current_time, 
             window_duration = self.window_duration
         )
+
+        # Now link the X-Axes
+        if not len(self.widgets): 
+            self.widgets[0].setXLink(widget)
     
     def unregister_widget(self, widget): 
+        # Incomplete, and might never be used
         if not widget in self.register_widget: 
             return
         self.time_params_changed.disconnect()
