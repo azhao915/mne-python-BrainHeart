@@ -10,7 +10,7 @@ from PyQt5.QtCore import Qt
 
 class ChannelManager(QWidget):
     
-    channel_changed = pyqtSignal(int)
+    channel_name_changed = pyqtSignal(str)
 
     def __init__(
             self, 
@@ -21,6 +21,10 @@ class ChannelManager(QWidget):
         self.ch_names = ch_names
         self.n_channels = len(ch_names)
         self.current_channel = initial_channel
+        self.curr_chan_name = self.ch_names[self.current_channel]
+
+        self.widgets = []
+
         self._setup_ui()
     
     def _setup_ui(self):
@@ -43,23 +47,37 @@ class ChannelManager(QWidget):
 
         self.update_channel_label()
 
+    
+    def register_widget(self, widget): 
+        if not hasattr(widget, "_update_display"): 
+            raise ValueError("widget must have an _update_display method")
+        self.channel_name_changed.connect(
+            lambda chan_name: widget._update_display(
+                curr_channel_name = chan_name
+            )
+        )
+        # First Update
+        widget._update_display(curr_channel_name = self.curr_chan_name)
+
+
     def update_channel_label(self): 
         self.ch_label.setText(
-            f"Channel: {self.ch_names[self.current_channel]}({self.current_channel + 1}/{len(self.ch_names)})"
+            f"Channel: {self.curr_chan_name}({self.current_channel + 1}/{len(self.ch_names)})"
         )
     
     def _prev_channel(self): 
         if self.current_channel > 0: 
-            self.current_channel -= 1
+            self.set_channel(self.current_channel - 1)
             self.update_channel_label()
-            self.channel_changed.emit(self.current_channel)
+            self.channel_name_changed.emit(self.curr_chan_name)
     
     def _next_channel(self): 
         if self.current_channel < self.n_channels - 1: 
-            self.current_channel += 1
+            self.set_channel(self.current_channel + 1)
             self.update_channel_label()
-            self.channel_changed.emit(self.current_channel)
+            self.channel_name_changed.emit(self.curr_chan_name)
 
     def set_channel(self, channel): 
         self.current_channel = channel
+        self.curr_chan_name = self.ch_names[self.current_channel]
         self.update_channel_label()

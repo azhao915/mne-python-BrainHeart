@@ -99,8 +99,7 @@ class TFRBrowser(QMainWindow):
         central_widget.setLayout(main_layout)
 
         self.channel_manager = ChannelManager(self.ch_names, self.current_channel)
-        self.channel_manager.channel_changed.connect(self._on_channel_changed)
-
+        
         main_layout.addWidget(self.channel_manager)
 
         # Have to add the Key Press Events here
@@ -123,6 +122,8 @@ class TFRBrowser(QMainWindow):
             self.time_manager.register_widget(
                 self.plot_time_widget
             )
+
+            self.channel_manager.register_widget(self.plot_time_widget)
             
             main_layout.addWidget(self.plot_time_widget)
         
@@ -142,6 +143,10 @@ class TFRBrowser(QMainWindow):
         self.annot_manager.register_plot(
             plot_name = "tfr", 
             plot_widget = self.tfr_widget.plot_tfr_widget
+        )
+
+        self.channel_manager.register_widget(
+            self.tfr_widget
         )
 
 
