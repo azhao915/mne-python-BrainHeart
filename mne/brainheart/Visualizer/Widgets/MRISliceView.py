@@ -13,7 +13,6 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import (
     QImage, 
     QPixmap, 
-    QColor,
     QPen, 
     QClipboard, 
     QFont
@@ -29,7 +28,7 @@ from nilearn.image.resampling import reorder_img
 class MRISliceVIewer(QGraphicsView): 
     def __init__(
             self, 
-            slice_name: str, 
+            slice_name: str = "", 
             parent = None): 
         super().__init__(parent)
 
@@ -76,31 +75,6 @@ class MRISliceVIewer(QGraphicsView):
 
         self.pixmap_item = QGraphicsPixmapItem(pixmap)
         self.scene.addItem(self.pixmap_item)
-
-        self.add_markers(
-            marker_line_pos, 
-            width, 
-            height
-        )
-
-    
-    def add_markers(self, marker_line_pos, width, height): 
-        if marker_line_pos is None: 
-            return
-        pen = QPen(QColor("white"), 1)
-
-        self.marker_horz = QGraphicsLineItem(
-            QLineF(0, marker_line_pos[1], width, marker_line_pos[1])
-        )
-        self.marker_horz.setPen(pen)
-        self.scene.addItem(self.marker_horz)
-
-        self.marker_vert = QGraphicsLineItem(
-            QLineF(marker_line_pos[0], 0, marker_line_pos[0], height)
-        )
-        self.marker_vert.setPen(pen)
-        self.scene.addItem(self.marker_vert)
-
     
     def resizeEvent(self, event): 
         super().resizeEvent(event)
@@ -114,44 +88,18 @@ class MRIViewer(QWidget):
     def __init__(
             self, 
             t1,
-            info,
             parent = None): 
         super().__init__(parent)
-        
-        self.click_pos_adj = 1000
-
-        self.setup_chs(info)
         self.setup_data(t1)
         self.setup_ui()
-
-    def setup_chs(
-            self, 
-            info
-    ): 
-        # Taken from the Brain Surface Widget code
-        positions = []
-        names = []
-
-        for ch in info["chs"]: 
-            if ch["kind"] != 802:
-                # Not sEEG
-                continue
-            name, pos = ch["ch_name"], ch["loc"][:3] * self.click_pos_adj
-            positions.append(pos)
-            names.append(name)
-
-        self.sensor_positions = np.array(positions)
-        self.sensor_names = names
 
     def setup_data(
             self, 
             t1
     ): 
+        print(t1.affine)
         t1 = reorder_img(t1)
-
-        vox2ras_tkr = t1.header.get_vox2ras_tkr()
-        self.raw_tfr2vox = np.linalg.inv(vox2ras_tkr)
-
+        print(t1.affine)
         data, affine = t1.get_fdata(), t1.affine
         affine_inv = np.linalg.inv(affine)
         self.data = data,
@@ -180,20 +128,15 @@ class MRIViewer(QWidget):
         self.setLayout(layout)
         self.setStyleSheet("background-color: black;")
 
-        self._update_display((0, 0, 0), curr_channel_name = None)  
+        self._update_display((0, 0, 0), electrode_name=None)  
 
     def _update_display(
             self, 
-            point = (0, 0, 0), 
-            curr_channel_name = None
+            point, 
+            electrode_name = None
     ): 
         if self.data is None:
             return
-        
-        if curr_channel_name is not None and curr_channel_name in self.sensor_names: 
-            chan_index = self.sensor_names.index(curr_channel_name)
-            point = self.sensor_positions[chan_index, :]
-
         coords_vox_indices = self.point_to_voxels(point)
 
         if isinstance(self.data, tuple): 
@@ -248,7 +191,6 @@ if __name__ == "__main__":
     from PyQt5.QtWidgets import QApplication, QMainWindow
     app = QApplication(sys.argv)
     main_window = QMainWindow()
-
     subject = "4r3o"
     import nibabel as nib
     t1 = nib.load(r"D:\DABI\sub-4r3o\mri\T1.mgz")

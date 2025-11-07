@@ -106,3 +106,4 @@ TESTS/OriginalHEPAnalysis.ipynb
 mne/brainheart/test.ipynb
 mne/brainheart/coherence_test.ipynb
 mne/brainheart/testing/test.ipynb
+mne/brainheart/Visualizer/test_tf.h5
