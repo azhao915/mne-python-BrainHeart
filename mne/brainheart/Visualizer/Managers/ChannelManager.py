@@ -45,7 +45,7 @@ class ChannelManager(QWidget):
 
         self.setLayout(layout)
 
-        self.update_channel_label()
+        self.redraw_channel_label()
 
     
     def register_widget(self, widget): 
@@ -60,7 +60,7 @@ class ChannelManager(QWidget):
         widget._update_display(curr_channel_name = self.curr_chan_name)
 
 
-    def update_channel_label(self): 
+    def redraw_channel_label(self): 
         self.ch_label.setText(
             f"Channel: {self.curr_chan_name}({self.current_channel + 1}/{len(self.ch_names)})"
         )
@@ -68,16 +68,19 @@ class ChannelManager(QWidget):
     def _prev_channel(self): 
         if self.current_channel > 0: 
             self.set_channel(self.current_channel - 1)
-            self.update_channel_label()
-            self.channel_name_changed.emit(self.curr_chan_name)
     
     def _next_channel(self): 
         if self.current_channel < self.n_channels - 1: 
             self.set_channel(self.current_channel + 1)
-            self.update_channel_label()
-            self.channel_name_changed.emit(self.curr_chan_name)
 
     def set_channel(self, channel): 
         self.current_channel = channel
         self.curr_chan_name = self.ch_names[self.current_channel]
-        self.update_channel_label()
+        self.redraw_channel_label()
+        self.channel_name_changed.emit(self.curr_chan_name)
+
+    def update_channel_name(self, chan_name): 
+        if chan_name not in self.ch_names: 
+            return
+        chan_index = self.ch_names.index(chan_name)
+        self.set_channel(chan_index)

@@ -6,12 +6,20 @@ from PyQt5.QtWidgets import (
     QWidget, 
     QVBoxLayout
 )
+
+from PyQt5.QtCore import pyqtSignal
+
 from pyvistaqt import QtInteractor
 import pyvista as pv
+
+from mne.brainheart.Visualizer.Managers.ChannelManager import ChannelManager
 
 import os
 
 class BrainSurfaceWidget(QWidget): 
+    
+    electrode_name_selected = pyqtSignal(str)
+
     def __init__(
             self, 
             subject: str, 
@@ -34,7 +42,7 @@ class BrainSurfaceWidget(QWidget):
             smooth_shading=True,
             show_scalar_bar=False,
             lighting=True,
-            interpolate_before_map=True
+            interpolate_before_map=True, 
         )
 
         self.click_pos_adj = 1000
@@ -55,6 +63,19 @@ class BrainSurfaceWidget(QWidget):
         self.setLayout(layout)
 
         self.plotter.set_background("black")
+
+    def link_channel_manager(self, channel_manager: ChannelManager): 
+        self.electrode_name_selected.connect(
+            lambda name: channel_manager.update_channel_name(name)
+        )
+
+        channel_manager.channel_name_changed.connect(
+            lambda name: self.set_highlighted_electrode(channel_name = name)
+        )
+        self.set_highlighted_electrode(
+            channel_manager.curr_chan_name
+        )
+        
 
     def load_data(self): 
         surf_path = os.path.join(self.subject_path, "surf")
@@ -104,6 +125,9 @@ class BrainSurfaceWidget(QWidget):
         self.plot_sensors()
         self.plot_sensor_labels()
 
+        # Temporary, do this more proper later
+        self.plotter.track_click_position(callback = self.click_callback)
+
     def plot_sensors(
         self
     ): 
@@ -116,7 +140,8 @@ class BrainSurfaceWidget(QWidget):
             color = "cyan",
             render_points_as_spheres = True,
             name = "all_sensors", 
-            pickable = True
+            pickable = True, 
+            reset_camera = False
         )
 
     def plot_sensor_labels(
@@ -136,13 +161,14 @@ class BrainSurfaceWidget(QWidget):
             text_color='cyan',
             render_points_as_spheres=True,
             always_visible=False,
-            name="all_sensors"
+            name="all_sensors", 
+            reset_camera = False
         )
 
     
     def highlight_electrode(self, index): 
         self.clear_highlight()
-        
+
         pos = self.sensor_positions[index, :]
         curr_selected_data = pv.PolyData(pos)
         
@@ -151,7 +177,8 @@ class BrainSurfaceWidget(QWidget):
             point_size = 15,
             color = "red", 
             render_points_as_spheres = True, 
-            pickable = True
+            pickable = True, 
+            reset_camera = False
         )
 
     def clear_highlight(self): 
@@ -167,6 +194,26 @@ class BrainSurfaceWidget(QWidget):
             triangles
         ]).ravel()
         return faces
+    
+    def set_highlighted_electrode(self, channel_name): 
+        if channel_name not in self.sensor_names: 
+            return
+        index = self.sensors[channel_name]["index"]
+        self.highlight_electrode(index)
+    
+    def click_callback(self, point): 
+        nearest_index = self.find_nearest_electrode(point)
+        chan_name = self.sensor_names[nearest_index]
+        chan_pos = self.sensor_positions[nearest_index, :]
+        self.electrode_name_selected.emit(chan_name)
+
+    def find_nearest_electrode(self, point): 
+        if isinstance(point, list): 
+            point = np.array(point)[None, :]
+        distances = np.linalg.norm(
+            self.sensor_positions - point, axis = 1
+        )
+        return np.argmin(distances, axis = 0)
 
 
 # First do a little test
@@ -182,4 +229,8 @@ if __name__ == "__main__":
     from mne.brainheart.load_reference_dataset import load
     raw = load()
     browser.add_sensors(raw.info)
+
+    channel_manager = ChannelManager(raw.ch_names)
+    browser.link_channel_manager(channel_manager)
+
     browser.show()
