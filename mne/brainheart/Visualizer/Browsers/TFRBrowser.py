@@ -52,8 +52,6 @@ class TFRBrowser(QMainWindow):
         # If given, then have the raw trace, if not then ignore it
         self.raw = raw
 
-        self.tf = tf
-
         # Initialize the annotations if possible
         if annotations is None and raw is not None: 
             annotations = raw.annotations
@@ -130,7 +128,7 @@ class TFRBrowser(QMainWindow):
             main_layout.addWidget(self.plot_time_widget)
         
         self.tfr_widget = TFRWidget(
-            tf = self.tf, 
+            tf = tf, 
             curr_channel = self.current_channel, 
             curr_time = self.current_time, 
             window_duration = self.window_duration, 
