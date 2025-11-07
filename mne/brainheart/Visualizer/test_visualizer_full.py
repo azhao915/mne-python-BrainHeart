@@ -19,10 +19,11 @@ raw = load(0)
 # TFR Browser
 ##############
 
-from mne.time_frequency import read_tfrs
+freqs = np.arange(50) + 2
+picks = np.arange(10) + 65
 
-# Load Pre-computed Time-Frequency Representation
-tf = read_tfrs("test_tf.h5")
+tf = raw.copy().pick(picks).compute_tfr(method = "morlet", freqs = freqs, decim = 100)
+
 tfr_browser = TFRBrowser(
     tf = tf,
     raw = raw)
@@ -32,7 +33,7 @@ tfr_browser = TFRBrowser(
 #############
 subject = "sub-4r3o"
 
-t1 = nib.load("D:\DABI\sub-4r3o\mri\T1.mgz")
+t1 = nib.load(r"D:\DABI\sub-4r3o\mri\T1.mgz")
 mri_widget = MRIViewer(t1, raw.info)
 tfr_browser.channel_manager.register_widget(mri_widget)
 

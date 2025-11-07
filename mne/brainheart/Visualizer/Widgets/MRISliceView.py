@@ -157,7 +157,7 @@ class MRIViewer(QWidget):
         self.data = data,
         #self.affine_inv = affine_inv
         self.affine_inv = self.raw_tfr2vox
-
+        
         self.vmin = np.min(data)
         self.vmax = np.max(data)
         dim = 0.6
@@ -207,22 +207,29 @@ class MRIViewer(QWidget):
             coronal_slice, 
             self.vmin, 
             self.vmax, 
-            marker_line_pos = (self.data.shape[0] - coords_vox_indices[0], 
-                               coords_vox_indices[1]))
+            marker_line_pos = (coords_vox_indices[0], 
+                               self.data.shape[2] - coords_vox_indices[2]))
+        print(f"Coronal: {(coords_vox_indices[0], 
+                               self.data.shape[2] - coords_vox_indices[2])}")
         self.sagittal_view.display_slice(
             sagittal_slice, 
             self.vmin, 
             self.vmax, 
-            marker_line_pos = (coords_vox_indices[2], coords_vox_indices[1]))
+            marker_line_pos = (coords_vox_indices[1], 
+                               self.data.shape[2] - coords_vox_indices[2]))
+        print(f"Sagittal: {(coords_vox_indices[1], 
+                               self.data.shape[2] - coords_vox_indices[2])}")
         self.horizontal_view.display_slice(
             horizontal_slice, 
             self.vmin, 
             self.vmax, 
-            marker_line_pos = (self.data.shape[0] - coords_vox_indices[0],
-                          self.data.shape[2] - coords_vox_indices[2]))
+            marker_line_pos = (coords_vox_indices[0],
+                          self.data.shape[1] - coords_vox_indices[1]))
+        print(f"Horizonta: {(coords_vox_indices[0],
+                          self.data.shape[1] - coords_vox_indices[1])}")
 
     def point_to_voxels(self, point): 
-        
+        print(point)
         coords = list(point)
         coords_anat = np.array((coords + [1]))
         coords_vox = self.affine_inv @ coords_anat
@@ -231,6 +238,7 @@ class MRIViewer(QWidget):
         for coord_index in range(3): 
             coords_vox_indices[coord_index] = np.clip(coords_vox_indices[coord_index], 0, self.data.shape[coord_index]-1)
         '''
+        print(coords_vox_indices)
         return coords_vox_indices
 
 
@@ -243,9 +251,11 @@ if __name__ == "__main__":
 
     subject = "4r3o"
     import nibabel as nib
-    t1 = nib.load(rf"D:\DABI\StimulationDataset\sub-{subject}\ses-preimp\anat\sub-{subject}_ses-preimp_acq-T1w_run-01_T1w.nii")
+    t1 = nib.load(r"D:\DABI\sub-4r3o\mri\T1.mgz")
+
 
     from mne.brainheart.load_reference_dataset import load
+    
     raw = load()
 
     from mne.brainheart.Visualizer.Managers.ChannelManager import ChannelManager
@@ -257,5 +267,8 @@ if __name__ == "__main__":
         widget
     )
     channel_manager.register_widget(widget)
+    channel_manager.update_channel_name("RAV02")
     main_window.show()
+
+    
 
